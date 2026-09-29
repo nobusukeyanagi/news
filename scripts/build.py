@@ -26,7 +26,7 @@ AGENT = 'PersonalNewsReader/1.0'
 TOPIC_CATEGORIES = ('国内', '国際', '経済', 'エンタメ', 'スポーツ', 'IT', '科学', '地域')
 TOPICS_PER_CATEGORY = 8
 # 本文抽出方法が変わったとき、旧データをそのまま再描画しない。
-SNAPSHOT_VERSION = 3
+SNAPSHOT_VERSION = 4
 IMAGE_HOSTS = {'newsatcl-pctr.c.yimg.jp'}
 ARTICLE = re.compile(r'^/(?:expert/)?articles/[a-f0-9]+/?$')
 PICKUP = re.compile(r'^/pickup/\d+/?$')
@@ -287,7 +287,10 @@ def parse_article(document, url):
                         in_caption):
                     continue
                 separator = ' ' if id(element) in paragraphs_with_removed_links else '\n'
-                text = clean(element.get_text(separator, strip=True))
+                # 記事内の <br> は段落区切りとして保持し、表示時に別の <p> にする。
+                for br in element.find_all('br'):
+                    br.replace_with('\ue000')
+                text = clean(element.get_text(separator, strip=True)).replace('\ue000', '\n\n')
                 if text:
                     body.append(text)
                     bold = element.find(['strong', 'b']) or element.select_one('[style*="font-weight"]')

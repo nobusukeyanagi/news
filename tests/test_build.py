@@ -109,6 +109,16 @@ class ReaderTests(unittest.TestCase):
         self.assertIn('<p>本文の段落です。</p>', page)
         self.assertIn('.subheading{font-weight:700}', page)
 
+    def test_br_separated_article_paragraphs_use_css_spacing(self):
+        doc = '''<div class="article_body"><p>500㌔遠征の計画。<br><br>
+        顧問が運転した。<br>学校は経緯を調べている。</p></div>'''
+        item = build.parse_article(doc, 'https://news.yahoo.co.jp/articles/abc')
+        page = build.render([{'title': '遊学館高バス事故', 'category': '国内',
+                              'topic_url': build.SOURCE, **item}], datetime.now(timezone.utc))
+        for paragraph in ('500㌔遠征の計画。', '顧問が運転した。', '学校は経緯を調べている。'):
+            self.assertIn('<p>' + paragraph + '</p>', page)
+        self.assertIn('article p{margin:0 0 18px}', page)
+
     def test_images_follow_original_article_order_without_duplicate_captions(self):
         photo1 = 'https://newsatcl-pctr.c.yimg.jp/one.jpg'
         photo2 = 'https://newsatcl-pctr.c.yimg.jp/two.jpg'
