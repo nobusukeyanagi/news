@@ -161,8 +161,23 @@ class ReaderTests(unittest.TestCase):
                 page = build.render([item], datetime.now(timezone.utc))
                 self.assertIn('<p>最後の本文です。</p>', page)
                 self.assertNotIn(signature, page)
-        self.assertEqual(build.body_paragraphs('本文です。（山田豊）\n', trailing=True), ['本文です。'])
-        self.assertEqual(build.body_paragraphs('本文です。（山田豊）'), ['本文です。（山田豊）'])
+        self.assertEqual(build.body_paragraphs('本文です。（山田豊）\n'), ['本文です。'])
+        self.assertEqual(build.body_paragraphs('本文です。（山田豊）'), ['本文です。'])
+
+    def test_additional_byline_and_broadcast_credits(self):
+        credits = ['（ブルームバーグ）：', '（CNN）', '（長妻昭明）', '（染田屋竜太）',
+                   '（宮田裕介）', 'Full-Count編集部',
+                   '（9月25日放送 news every.『なるほどッ！』より）',
+                   'All Nippon NewsNetwork(ANN)', 'TBSテレビ']
+        for credit in credits:
+            with self.subTest(credit=credit):
+                item = {'title': '記事', 'category': '国内', 'topic_url': build.SOURCE,
+                        'body': [credit + '\u00a0', '記事本文。', credit]}
+                page = build.render([item], datetime.now(timezone.utc))
+                self.assertIn('<p>記事本文。</p>', page)
+                self.assertNotIn('<p>' + credit + '</p>', page)
+        self.assertEqual(build.body_paragraphs('（ブルームバーグ）： 記事本文。\n（CNN） 続報。'),
+                         ['記事本文。 続報。'])
 
     def test_expert_points_and_cited_excerpts_are_removed(self):
         excerpts = ['独ロ外相がＮＹで会談、黒海穀物輸出など協議 出典：',
@@ -181,6 +196,20 @@ class ReaderTests(unittest.TestCase):
         self.assertNotIn('ココがポイント', page)
         for excerpt in excerpts:
             self.assertNotIn(excerpt, page)
+        item['blocks'].extend([
+            {'type': 'text', 'text': 'エキスパートの補足・見解'},
+            {'type': 'text', 'text': '専門家による補足本文。'},
+            {'type': 'image', 'src': 'images/expert.jpg', 'caption': '補足の写真'},
+        ])
+        page = build.render([item], datetime.now(timezone.utc))
+        self.assertIn('<p>エキスパートの補足・見解</p><p>専門家による補足本文。</p>', page)
+        self.assertIn('images/expert.jpg', page)
+        for excerpt in excerpts:
+            self.assertNotIn(excerpt, page)
+        same_block = build.without_expert_points([{'type': 'text', 'text':
+            '記事本文。\nココがポイント\n別記事の抜粋 出典：\nエキスパートの補足・見解\n補足本文。'}])
+        self.assertEqual([block['text'] for block in same_block],
+                         ['記事本文。\n', 'エキスパートの補足・見解\n補足本文。'])
         item['url'] = 'https://news.yahoo.co.jp/articles/abc'
         self.assertIn('ココがポイント', build.render([item], datetime.now(timezone.utc)))
 

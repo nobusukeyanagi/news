@@ -336,15 +336,18 @@ WIRE_DATELINE = re.compile(r'^\[[^\]\n]{1,35}(?:ロイター|Reuters|AFP)[^\]\n]
 BYLINE_CREDIT = re.compile(
     r'^(?:\(c\)|©)\s*\d{4}\s+.{2,60}$|'
     r'^（(?:取材[・･/]文[・･/]?)?[一-龥ぁ-んァ-ヶー]{3,16}）$|'
+    r'^（\d{1,2}月\d{1,2}日放送\s+.+より）$|'
     r'^(?:日本気象協会(?:\s+本社)?\s+[一-龥]{1,5}[\s\u3000]*[一-龥]{1,5}|'
     r'フジテレビ[、,]\s*政治部)$', re.I)
-BYLINE_AGENCY = re.compile(r'^(?:朝日新聞社|読売新聞社|毎日新聞社|日本経済新聞社|産経新聞社|共同通信社|時事通信社|AFP時事|ロイター)$')
+BYLINE_AGENCY = re.compile(r'^(?:朝日新聞社|読売新聞社|毎日新聞社|日本経済新聞社|産経新聞社|共同通信社|時事通信社|AFP時事|ロイター|Full-Count編集部|All Nippon NewsNetwork\(ANN\)|TBSテレビ)$')
 BYLINE_PERSON = re.compile(r'^(?:[一-龥]{3,6}|[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})$')
 BYLINE_SUFFIX = re.compile(r'([。.!！?？」』）])\s*(?:（(?:取材[・･/]文[・･/]?)?[一-龥]{3,6}）|【(?:[ァ-ヶー]{2,16})?[一-龥]{3,6}】)\s*$')
+BYLINE_PREFIX = re.compile(r'^（(?:ブルームバーグ|CNN)）[：:\s]*')
 EXPERT_POINTS = re.compile(r'(?m)^[ \t\u3000]*ココがポイント[ \t\u3000]*(?:\n|$)')
+EXPERT_VIEW = re.compile(r'(?m)^[ \t\u3000]*エキスパートの補足・見解[ \t\u3000]*(?:\n|$)')
 
 
-def body_paragraphs(text, publisher='', edge=False, trailing=False):
+def body_paragraphs(text, publisher='', edge=False):
     """既存のスナップショットも含め、本文の段落と署名を表示時に整える。"""
     paragraphs, current = [], []
     for raw in text.replace('\r\n', '\n').split('\n'):
@@ -352,8 +355,10 @@ def body_paragraphs(text, publisher='', edge=False, trailing=False):
         line = raw.lstrip(' \t\u3000\u00a0').strip()
         line = WIRE_DATELINE.sub('', line)
         line = BYLINE_BRACKET.sub('', line)
+        line = BYLINE_PREFIX.sub('', line)
         if (BYLINE_CREDIT.fullmatch(line) or BYLINE_AGENCY.fullmatch(line) or
-                (edge and line and (line == publisher or BYLINE_PERSON.fullmatch(line)))):
+                (line and line == publisher) or
+                (edge and line and BYLINE_PERSON.fullmatch(line))):
             if current:
                 paragraphs.append(' '.join(current))
                 current = []
@@ -369,9 +374,29 @@ def body_paragraphs(text, publisher='', edge=False, trailing=False):
             current.append(line)
     if current:
         paragraphs.append(' '.join(current))
-    if trailing and paragraphs:
-        paragraphs[-1] = BYLINE_SUFFIX.sub(r'\1', paragraphs[-1])
-    return paragraphs
+    return [BYLINE_SUFFIX.sub(r'\1', paragraph) for paragraph in paragraphs]
+
+
+def without_expert_points(blocks):
+    """ポイント欄だけを飛ばし、その後の専門家の見解は残す。"""
+    result, skipping = [], False
+    for block in blocks:
+        if block['type'] != 'text':
+            if not skipping:
+                result.append(block)
+            continue
+        text = block['text']
+        while text:
+            marker = EXPERT_VIEW.search(text) if skipping else EXPERT_POINTS.search(text)
+            if not marker:
+                if not skipping:
+                    result.append({**block, 'text': text})
+                break
+            if not skipping and text[:marker.start()].strip():
+                result.append({**block, 'text': text[:marker.start()]})
+            text = text[marker.end():] if not skipping else text[marker.start():]
+            skipping = not skipping
+    return result
 
 
 def render(items, updated):
@@ -385,12 +410,7 @@ def render(items, updated):
                                          [{'type': 'text', 'text': p} for p in item['body']])
         url = item.get('url') or item['topic_url']
         if '/expert/articles/' in urllib.parse.urlsplit(url).path:
-            # エキスパート記事末尾の「ココがポイント」は出典付きの別記事抜粋。
-            for i, block in enumerate(ordered):
-                if block['type'] == 'text' and (match := EXPERT_POINTS.search(block['text'])):
-                    ordered = ordered[:i] + ([{'type': 'text', 'text': block['text'][:match.start()]}]
-                                             if block['text'][:match.start()].strip() else [])
-                    break
+            ordered = without_expert_points(ordered)
         text_positions = [i for i, block in enumerate(ordered) if block['type'] == 'text']
         content = []
         for position, block in enumerate(ordered):
@@ -399,8 +419,7 @@ def render(items, updated):
                 content.append(f'<figure><img src="{esc(block["src"], quote=True)}" alt="記事に掲載された写真" loading="lazy" decoding="async">{caption}</figure>')
             else:
                 edge = position in text_positions[:2] or position in text_positions[-3:]
-                paragraphs = body_paragraphs(block['text'], item.get('publisher', ''), edge,
-                                             position == text_positions[-1])
+                paragraphs = body_paragraphs(block['text'], item.get('publisher', ''), edge)
                 content.extend(f'<p>{esc(paragraph)}</p>' for paragraph in paragraphs)
         note = f'<p class="notice">{esc(item["note"])}</p>' if item.get('note') else ''
         full_title = item.get('article_title', '')
