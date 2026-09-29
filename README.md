@@ -29,6 +29,7 @@ Yahoo!ニュースの https://news.yahoo.co.jp/topics に表示されている�
 - 取得とデプロイに数分程度かかります。Actionsの混雑により、起動自体も遅延・スキップされる場合があります。
 - 手動更新は **Actions → Update news → Run workflow** から行えます。
 - `main` へのアップロードによる更新では、前回保存した記事と写真からHTMLを作り直します。デザインのみを変更したときはニュースを再取得しません。
+- 保存済みデータが64件に満たない場合は、デザイン変更時でもニュースを取得し直します。
 - 保存済みデータがない場合、キャッシュが失われた場合、本文抽出方法が変わった場合は全件取得します。定時・手動実行でも毎回ニュースを取得し直します。
 - 公開リポジトリでは、リポジトリに60日間活動がないと定期実行が自動停止されることがあります。停止時はActions画面で再度有効にしてください。
 - ページは開いた時点の最新の公開内容を表示します。開きっぱなしのページは再読み込みしてください。
@@ -36,6 +37,7 @@ Yahoo!ニュースの https://news.yahoo.co.jp/topics に表示されている�
 ## 表示する内容
 
 - `/topics` のメイン一覧にあるニュースを掲載順に取得します（作成時点では8カテゴリ・計64件）。
+- 通常更新では8カテゴリに各8件あることを確認します。一時的に欠けた一覧は最大3回取得し直し、それでも64件が揃わなければ新しいページを公開せず前回のページを維持します。本文が取得できない記事もタイトルと元記事リンクは掲載します。
 - PCでは左にタイトル一覧、右にニュースを表示します。スマホでは縦に並びます。
 - トピックのタイトル、元記事のタイトル、カテゴリ、配信元、元記事の配信日時、写真、写真のキャプション、本文、元記事リンクを表示します。
 - 写真は1記事につき最大6枚を公開時に保存し、写真の下にキャプションを小さく表示します。取得できない写真は省略します。
@@ -67,6 +69,9 @@ HTMLのheadに以下を設定しています。
 .github/workflows/news.yml  定期取得とPagesへの公開
 scripts/build.py           一覧取得・本文抽出・HTML生成
 tests/test_build.py         抽出と安全なHTML出力の確認
+favicon.ico                ブラウザのアイコン
+apple-touch-icon.png       ホーム画面のアイコン
+icon-master.png            アイコンの元画像
 requirements.txt           Python依存パッケージ
 index.html                 未取得状態の表示見本
 robots.txt                 noindexの読み取りを妨げない設定
@@ -82,7 +87,7 @@ Python 3.12以降で実行します。
 python -m pip install -r requirements.txt
 python -m unittest discover -s tests
 python scripts/build.py --limit 3
-python scripts/build.py --from-snapshot site/snapshot.json
+python scripts/build.py --from-snapshot site/snapshot.json --limit 3
 ```
 
 生成された `site/index.html` をブラウザで開きます。全件取得する場合は `--limit 3` を外してください。`--from-snapshot` は保存した記事と写真からページだけを再生成します。通信せず初回案内だけを生成する場合は `--empty` を指定します。

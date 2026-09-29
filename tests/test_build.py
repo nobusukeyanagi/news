@@ -13,6 +13,58 @@ spec.loader.exec_module(build)
 
 
 class ReaderTests(unittest.TestCase):
+    @staticmethod
+    def topics_document(missing_category=None):
+        sections = []
+        for category_number, category in enumerate(build.TOPIC_CATEGORIES):
+            count = 7 if category == missing_category else 8
+            links = ''.join(f'<li><a href="/pickup/{category_number * 100 + n + 1000}">記事{n}'
+                            '<span aria-label="NEW"></span></a></li>' for n in range(count))
+            sections.append(f'<div><p><a href="/categories/{category_number}">{category}</a></p>'
+                            f'<ul>{links}</ul></div>')
+        return ('<main id="yjnMain"><div id="uamods-topics">' + ''.join(sections) + '</div>'
+                '<aside><a href="/pickup/999999">ランキング</a></aside></main>')
+
+    def test_all_eight_categories_have_eight_unique_headlines(self):
+        items = build.parse_topics(self.topics_document())
+        self.assertTrue(build.full_topic_list(items))
+        self.assertEqual(len(items), 64)
+        self.assertEqual(items[0]['title'], '記事0')
+        self.assertEqual(items[-1]['category'], '地域')
+        self.assertNotIn('ランキング', [item['title'] for item in items])
+        self.assertFalse(build.full_topic_list(build.parse_topics(self.topics_document('科学'))))
+
+    def test_partial_list_is_refetched_and_never_accepted(self):
+        complete = self.topics_document()
+        partial = self.topics_document('科学')
+
+        class Client:
+            def __init__(self, documents):
+                self.documents = iter(documents)
+                self.refreshes = []
+
+            def get(self, url, refresh=False):
+                self.refreshes.append(refresh)
+                return next(self.documents)
+
+        client = Client([partial, complete])
+        with patch.object(build.time, 'sleep'):
+            self.assertEqual(len(build.fetch_topics(client)), 64)
+        self.assertEqual(client.refreshes, [False, True])
+        with patch.object(build.time, 'sleep'):
+            with self.assertRaisesRegex(RuntimeError, '8カテゴリ×8件'):
+                build.fetch_topics(Client([partial] * 3))
+        self.assertEqual(len(build.fetch_topics(Client([partial]), require_full=False)), 63)
+        with tempfile.TemporaryDirectory() as directory:
+            site = Path(directory)
+            (site / 'index.html').write_text('前回公開した64件', encoding='utf-8')
+            with patch.object(sys, 'argv', ['build.py', '--output', str(site)]), \
+                 patch.object(build, 'Client', return_value=Client([partial] * 3)), \
+                 patch.object(build.time, 'sleep'):
+                with self.assertRaisesRegex(RuntimeError, '8カテゴリ×8件'):
+                    build.main()
+            self.assertEqual((site / 'index.html').read_text(encoding='utf-8'), '前回公開した64件')
+
     def test_topics_excludes_sidebar_and_badges(self):
         doc = '''<main><div id="yjnMain"><div><a href="/categories/domestic">国内</a>
         <ul><li><a href="/pickup/1">サンプルの見出し<span>NEW</span></a></li></ul></div></div>
@@ -352,7 +404,7 @@ class ReaderTests(unittest.TestCase):
                                              'caption': '撮影者'}, {'type': 'text', 'text': '本文'}]}]}
             (site / 'snapshot.json').write_text(json.dumps(snapshot), encoding='utf-8')
             with patch.object(sys, 'argv', ['build.py', '--from-snapshot', str(site / 'snapshot.json'),
-                                            '--output', str(site)]), patch.object(build, 'Client',
+                                            '--output', str(site), '--limit', '1']), patch.object(build, 'Client',
                                                                                  side_effect=AssertionError('network')):
                 build.main()
             page = (site / 'index.html').read_text(encoding='utf-8')
@@ -362,6 +414,38 @@ class ReaderTests(unittest.TestCase):
             self.assertIn('<link rel="apple-touch-icon" href="apple-touch-icon.png"', page)
             self.assertTrue((site / 'favicon.ico').is_file())
             self.assertTrue((site / 'apple-touch-icon.png').is_file())
+
+    def test_incomplete_snapshot_requires_refetch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            site = Path(directory)
+            snapshot = {'format_version': build.SNAPSHOT_VERSION,
+                        'updated': '2026-09-29T06:00:00+09:00',
+                        'items': [{'title': '1件だけ', 'category': '国内', 'body': ['本文']}]}
+            path = site / 'snapshot.json'
+            path.write_text(json.dumps(snapshot), encoding='utf-8')
+            with patch.object(sys, 'argv', ['build.py', '--from-snapshot', str(path),
+                                            '--output', str(site)]):
+                with self.assertRaisesRegex(RuntimeError, '64件揃わない'):
+                    build.main()
+            self.assertFalse((site / 'index.html').exists())
+
+    def test_complete_snapshot_rebuilds_all_64_without_network(self):
+        with tempfile.TemporaryDirectory() as directory:
+            site = Path(directory)
+            items = build.parse_topics(self.topics_document())
+            for item in items:
+                item['body'] = ['本文']
+            path = site / 'snapshot.json'
+            path.write_text(json.dumps({'format_version': build.SNAPSHOT_VERSION,
+                                        'updated': '2026-09-29T15:00:00+09:00',
+                                        'items': items}), encoding='utf-8')
+            with patch.object(sys, 'argv', ['build.py', '--from-snapshot', str(path),
+                                            '--output', str(site)]), \
+                 patch.object(build, 'Client', side_effect=AssertionError('network')):
+                build.main()
+            page = (site / 'index.html').read_text(encoding='utf-8')
+            self.assertIn('最新ニュース64', page)
+            self.assertEqual(page.count('<article id="news-'), 64)
 
     def test_old_snapshot_must_refetch_after_extraction_change(self):
         with tempfile.TemporaryDirectory() as directory:

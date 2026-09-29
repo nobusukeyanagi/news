@@ -13,6 +13,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import urllib.robotparser
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -22,6 +23,8 @@ from bs4 import BeautifulSoup
 SOURCE = 'https://news.yahoo.co.jp/topics'
 ORIGIN = 'https://news.yahoo.co.jp'
 AGENT = 'PersonalNewsReader/1.0'
+TOPIC_CATEGORIES = ('国内', '国際', '経済', 'エンタメ', 'スポーツ', 'IT', '科学', '地域')
+TOPICS_PER_CATEGORY = 8
 # 本文抽出方法が変わったとき、旧データをそのまま再描画しない。
 SNAPSHOT_VERSION = 3
 IMAGE_HOSTS = {'newsatcl-pctr.c.yimg.jp'}
@@ -83,13 +86,13 @@ class Client:
             time.sleep(2 ** (attempt + 1))
         raise RuntimeError('取得できませんでした')
 
-    def get(self, url):
+    def get(self, url, refresh=False):
         p = urllib.parse.urlsplit(url)
         if p.scheme != 'https' or p.netloc != 'news.yahoo.co.jp':
             raise RuntimeError('取得対象外のURL')
         if not self.robots.can_fetch(AGENT, url):
             raise RuntimeError('robots.txtで取得が許可されていません')
-        if url not in self.cache:
+        if refresh or url not in self.cache:
             self.cache[url] = self._get(url)
         return self.cache[url]
 
@@ -134,17 +137,18 @@ class Client:
 
 def parse_topics(document):
     soup = BeautifulSoup(document, 'html.parser')
-    # yjnSubのランキング・おすすめ記事を含めない。
-    root = soup.select_one('#yjnMain') or soup.find('main') or soup
+    # トピックス本体に限定し、ランキングやおすすめ記事を混ぜない。
+    root = soup.select_one('#uamods-topics') or soup.select_one('#yjnMain') or soup.find('main') or soup
     items, seen = [], set()
     for a in root.select('a[href]'):
         url = urllib.parse.urljoin(SOURCE, a['href'])
         p = urllib.parse.urlsplit(url)
         if p.netloc != 'news.yahoo.co.jp' or not PICKUP.fullmatch(p.path) or url in seen:
             continue
-        seen.add(url)
         title = clean(''.join(str(t) for t in a.find_all(string=True, recursive=False)))
         title = title or clean(a.get_text(' ', strip=True))
+        if not title:
+            continue
         category = 'ニュース'
         for parent in a.parents:
             category_link = parent.select_one('a[href^="/categories/"]')
@@ -153,10 +157,39 @@ def parse_topics(document):
                 break
             if parent is root:
                 break
+        seen.add(url)
         items.append({'title': title, 'topic_url': url, 'category': category})
     if not items:
         raise RuntimeError('トピックス一覧が取得できませんでした。サイト構造の変更・アクセス制限を確認してください。')
     return items
+
+
+def topic_counts(items):
+    return Counter(item['category'] for item in items)
+
+
+def full_topic_list(items):
+    counts = topic_counts(items)
+    return len(items) == len(TOPIC_CATEGORIES) * TOPICS_PER_CATEGORY and all(
+        counts[category] == TOPICS_PER_CATEGORY for category in TOPIC_CATEGORIES)
+
+
+def fetch_topics(client, require_full=True, attempts=3):
+    """一時的な欠落は再取得し、64件が揃わなければ公開を止める。"""
+    for attempt in range(attempts):
+        document = client.get(SOURCE, refresh=attempt > 0)
+        try:
+            items = parse_topics(document)
+        except RuntimeError:
+            items = []
+        if items and (not require_full or full_topic_list(items)):
+            return items
+        counts = topic_counts(items)
+        summary = ', '.join(f'{category}:{counts[category]}' for category in TOPIC_CATEGORIES)
+        print(f'::warning::一覧が不完全です ({len(items)}件、{summary})。再取得します', file=sys.stderr)
+        if attempt + 1 < attempts:
+            time.sleep(2 * (attempt + 1))
+    raise RuntimeError(f'8カテゴリ×8件が揃わないため公開を中止します（取得 {len(items)}件）。')
 
 
 def linked_article(document, base):
@@ -552,6 +585,8 @@ def main():
         now = datetime.fromisoformat(snapshot['updated'])
         if not items or not any(item.get('body') for item in items):
             raise RuntimeError('保存済みの記事がありません')
+        if args.limit == 0 and not full_topic_list(items):
+            raise RuntimeError('保存済みのニュースが64件揃わないため、ニュースを取り直します')
         for item in items:
             for block in item.get('blocks', []):
                 if block['type'] == 'image' and not (output / block['src']).is_file():
@@ -559,7 +594,7 @@ def main():
         print(f'保存済みの{len(items)}件からHTMLを再生成します（ニュースの再取得なし）', flush=True)
     elif not args.empty:
         client = Client()
-        topics = parse_topics(client.get(SOURCE))
+        topics = fetch_topics(client, require_full=args.limit == 0)
         if args.limit > 0:
             topics = topics[:args.limit]
         print(f'一覧 {len(topics)}件', flush=True)
