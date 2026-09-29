@@ -23,7 +23,7 @@ SOURCE = 'https://news.yahoo.co.jp/topics'
 ORIGIN = 'https://news.yahoo.co.jp'
 AGENT = 'PersonalNewsReader/1.0'
 # 本文抽出方法が変わったとき、旧データをそのまま再描画しない。
-SNAPSHOT_VERSION = 2
+SNAPSHOT_VERSION = 3
 IMAGE_HOSTS = {'newsatcl-pctr.c.yimg.jp'}
 ARTICLE = re.compile(r'^/(?:expert/)?articles/[a-f0-9]+/?$')
 PICKUP = re.compile(r'^/pickup/\d+/?$')
@@ -254,7 +254,12 @@ def parse_article(document, url):
                 text = clean(element.get_text(separator, strip=True))
                 if text:
                     body.append(text)
-                    blocks.append({'type': 'text', 'text': text})
+                    bold = element.find(['strong', 'b']) or element.select_one('[style*="font-weight"]')
+                    is_heading = (element.name in ('h2', 'h3', 'h4') or
+                                  bool(re.search(r'font-weight\s*:\s*(?:bold|[6-9]00)', element.get('style', ''), re.I)) or
+                                  (bold is not None and clean(bold.get_text(' ', strip=True)) ==
+                                   clean(element.get_text(' ', strip=True))))
+                    blocks.append({'type': 'heading' if is_heading else 'text', 'text': text})
         else:
             text = clean(container.get_text('\n', strip=True))
             if text:
@@ -294,7 +299,7 @@ def fetch_article(client, item, image_dir=None):
             if len(seen) == 1:
                 result.update({k: parsed[k] for k in ('article_title', 'publisher', 'published')})
             for block in parsed['blocks']:
-                if block['type'] == 'text':
+                if block['type'] in ('text', 'heading'):
                     result['body'].append(block['text'])
                     result['blocks'].append(block)
                 elif image_dir is not None and len(result['images']) < 6:
@@ -381,7 +386,7 @@ def without_expert_points(blocks):
     """ポイント欄だけを飛ばし、その後の専門家の見解は残す。"""
     result, skipping = [], False
     for block in blocks:
-        if block['type'] != 'text':
+        if block['type'] not in ('text', 'heading'):
             if not skipping:
                 result.append(block)
             continue
@@ -411,7 +416,7 @@ def render(items, updated):
         url = item.get('url') or item['topic_url']
         if '/expert/articles/' in urllib.parse.urlsplit(url).path:
             ordered = without_expert_points(ordered)
-        text_positions = [i for i, block in enumerate(ordered) if block['type'] == 'text']
+        text_positions = [i for i, block in enumerate(ordered) if block['type'] in ('text', 'heading')]
         content = []
         for position, block in enumerate(ordered):
             if block['type'] == 'image':
@@ -420,7 +425,8 @@ def render(items, updated):
             else:
                 edge = position in text_positions[:2] or position in text_positions[-3:]
                 paragraphs = body_paragraphs(block['text'], item.get('publisher', ''), edge)
-                content.extend(f'<p>{esc(paragraph)}</p>' for paragraph in paragraphs)
+                paragraph_class = ' class="subheading"' if block['type'] == 'heading' else ''
+                content.extend(f'<p{paragraph_class}>{esc(paragraph)}</p>' for paragraph in paragraphs)
         note = f'<p class="notice">{esc(item["note"])}</p>' if item.get('note') else ''
         full_title = item.get('article_title', '')
         subtitle = f'<p class="full-title">{esc(full_title)}</p>' if full_title and full_title != title else ''
@@ -439,7 +445,7 @@ def render(items, updated):
 <title>ニュース一覧</title>
 <style>
 *{{box-sizing:border-box}}html{{scroll-behavior:auto}}body{{margin:0;background:#fff;color:#202020;font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif;font-size:16px;line-height:1.9;overflow-wrap:anywhere}}figure{{margin:0 0 18px}}figure img{{display:block;width:auto;max-width:300px;height:auto;max-height:300px;object-fit:contain}}figcaption{{font-size:.8125rem;color:#555;line-height:1.55;margin-top:5px}}
-main{{max-width:1440px;margin:0 auto;padding:0 24px 56px}}header{{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:6px 16px;flex-wrap:wrap;min-height:42px;padding:3px 0;background:#fff;border-bottom:1px solid #bbb}}h1{{font-size:1.5rem;line-height:1.3;margin:0}}h1 a{{color:inherit;text-decoration:none}}h2{{font-size:1.3rem;line-height:1.55;margin:0 0 8px}}.feed article h2{{color:#14532d}}a{{color:#174c86;text-underline-offset:3px}}a:focus-visible{{outline:2px solid #174c86;outline-offset:4px}}.updated{{margin-left:auto}}.meta,.updated{{font-size:.875rem;color:#555}}.meta{{margin:4px 0 14px}}.meta a{{color:inherit}}.menu-toggle{{display:none}}.layout{{display:grid;grid-template-columns:minmax(230px,320px) minmax(0,1fr);gap:36px;align-items:start}}nav{{position:sticky;top:calc(var(--header-height, 42px) + 8px);max-height:calc(100dvh - var(--header-height, 42px) - 16px);overflow:auto;padding-top:12px}}nav h2{{font-size:1rem;line-height:1.4;margin:0 0 4px}}.category{{margin:0 0 18px}}.category ul{{list-style:none;margin:0;padding:0}}.category li{{padding:2px 0}}article{{border-top:1px solid #bbb;padding:28px 0;scroll-margin-top:calc(var(--header-height, 42px) + 12px)}}.feed article:first-child{{border-top:0;padding-top:12px}}article p{{margin:0 0 18px}}.full-title{{font-weight:600}}.notice{{padding:10px 14px;border-left:3px solid #999;background:#f5f5f5}}@media(max-width:700px){{main{{padding:0 16px 36px}}.layout{{display:block}}.menu-toggle{{display:inline-flex;align-items:center;justify-content:center;flex:none;width:32px;height:34px;border:0;background:transparent;color:inherit;padding:4px}}.hamburger{{display:flex;flex-direction:column;gap:4px}}.hamburger span{{display:block;width:20px;height:2px;background:currentColor}}h1{{font-size:1.25rem}}.updated{{font-size:.75rem}}h2{{font-size:1.2rem}}.layout nav{{display:none;position:fixed;top:var(--header-height, 42px);left:0;right:0;z-index:19;max-height:calc(100dvh - var(--header-height, 42px));overflow:auto;padding:12px 16px;background:#fff;border-bottom:1px solid #bbb;box-shadow:0 5px 10px #0002}}body.menu-open .layout nav{{display:block}}}}@media print{{header{{position:static}}.menu-toggle,nav{{display:none!important}}main{{max-width:none;padding:0}}.layout{{display:block}}article{{break-inside:auto}}}}
+main{{max-width:1440px;margin:0 auto;padding:0 24px 56px}}header{{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:6px 16px;flex-wrap:wrap;min-height:42px;padding:3px 0;background:#fff;border-bottom:1px solid #bbb}}h1{{font-size:1.5rem;line-height:1.3;margin:0}}h1 a{{color:inherit;text-decoration:none}}h2{{font-size:1.3rem;line-height:1.55;margin:0 0 8px}}.feed article h2{{color:#14532d}}a{{color:#174c86;text-underline-offset:3px}}a:focus-visible{{outline:2px solid #174c86;outline-offset:4px}}.updated{{margin-left:auto}}.meta,.updated{{font-size:.875rem;color:#555}}.meta{{margin:4px 0 14px}}.meta a{{color:inherit}}.menu-toggle{{display:none}}.layout{{display:grid;grid-template-columns:minmax(230px,320px) minmax(0,1fr);gap:36px;align-items:start}}nav{{position:sticky;top:calc(var(--header-height, 42px) + 8px);max-height:calc(100dvh - var(--header-height, 42px) - 16px);overflow:auto;padding-top:12px}}nav h2{{font-size:1rem;line-height:1.4;margin:0 0 4px}}.category{{margin:0 0 18px}}.category ul{{list-style:none;margin:0;padding:0}}.category li{{padding:2px 0}}article{{border-top:1px solid #bbb;padding:28px 0;scroll-margin-top:calc(var(--header-height, 42px) + 12px)}}.feed article:first-child{{border-top:0;padding-top:12px}}article p{{margin:0 0 18px}}.subheading{{font-weight:700}}.full-title{{font-weight:600}}.notice{{padding:10px 14px;border-left:3px solid #999;background:#f5f5f5}}@media(max-width:700px){{main{{padding:0 16px 36px}}.layout{{display:block}}.menu-toggle{{display:inline-flex;align-items:center;justify-content:center;flex:none;order:3;margin-left:auto;width:32px;height:34px;border:0;background:transparent;color:inherit;padding:4px}}.hamburger{{display:flex;flex-direction:column;gap:4px}}.hamburger span{{display:block;width:20px;height:2px;background:currentColor}}h1{{font-size:1.25rem}}.updated{{margin-left:0;font-size:.75rem}}h2{{font-size:1.2rem}}.layout nav{{display:none;position:fixed;top:var(--header-height, 42px);left:0;right:0;z-index:19;max-height:calc(100dvh - var(--header-height, 42px));overflow:auto;padding:12px 16px;background:#fff;border-bottom:1px solid #bbb;box-shadow:0 5px 10px #0002}}body.menu-open .layout nav{{display:block}}}}@media print{{header{{position:static}}.menu-toggle,nav{{display:none!important}}main{{max-width:none;padding:0}}.layout{{display:block}}article{{break-inside:auto}}}}
 </style></head><body><main id="top"><header><button class="menu-toggle" type="button" aria-label="タイトル一覧を開く" aria-controls="news-nav" aria-expanded="false"><span class="hamburger" aria-hidden="true"><span></span><span></span><span></span></span></button><h1><a href="#top">{esc(page_title)}</a></h1>{updated_label}</header>
 <div class="layout"><nav id="news-nav" aria-label="タイトル一覧">{contents}</nav><div class="feed">
 {news}

@@ -32,7 +32,30 @@ class ReaderTests(unittest.TestCase):
         self.assertEqual(item['body'], ['小見出し', '本文の例です。'])
         self.assertEqual(item['next_url'], 'https://news.yahoo.co.jp/articles/abc?page=2')
         self.assertEqual(item['images'], [{'url': 'https://newsatcl-pctr.c.yimg.jp/photo.jpg', 'caption': '画像：提供元'}])
-        self.assertEqual([block['type'] for block in item['blocks']], ['image', 'text', 'text'])
+        self.assertEqual([block['type'] for block in item['blocks']], ['image', 'heading', 'text'])
+
+    def test_original_article_subheadings_are_bold(self):
+        article = '''<div class="article_body">
+        <h2>台風26号　30日から伊豆諸島に接近へ</h2>
+        <p>本文の段落です。</p>
+        <p><strong>接近前から前線による雨に注意</strong></p>
+        <p style="font-weight: 700">エキスパートの補足・見解</p>
+        <p>補足本文。</p></div>'''
+        class Client:
+            def get(self, url):
+                if '/pickup/' in url:
+                    return '<a href="/articles/abc">記事全文を読む</a>'
+                return article
+        item = build.fetch_article(Client(), {'title': '台風26号', 'category': '国内',
+                                                'topic_url': 'https://news.yahoo.co.jp/pickup/1'})
+        self.assertEqual([block['type'] for block in item['blocks']],
+                         ['heading', 'text', 'heading', 'heading', 'text'])
+        page = build.render([item], datetime.now(timezone.utc))
+        for title in ('台風26号　30日から伊豆諸島に接近へ', '接近前から前線による雨に注意',
+                      'エキスパートの補足・見解'):
+            self.assertIn('<p class="subheading">' + title + '</p>', page)
+        self.assertIn('<p>本文の段落です。</p>', page)
+        self.assertIn('.subheading{font-weight:700}', page)
 
     def test_images_follow_original_article_order_without_duplicate_captions(self):
         photo1 = 'https://newsatcl-pctr.c.yimg.jp/one.jpg'
@@ -210,6 +233,13 @@ class ReaderTests(unittest.TestCase):
             '記事本文。\nココがポイント\n別記事の抜粋 出典：\nエキスパートの補足・見解\n補足本文。'}])
         self.assertEqual([block['text'] for block in same_block],
                          ['記事本文。\n', 'エキスパートの補足・見解\n補足本文。'])
+        heading_blocks = build.without_expert_points([
+            {'type': 'heading', 'text': 'ココがポイント'},
+            {'type': 'text', 'text': '別記事の抜粋 出典：'},
+            {'type': 'heading', 'text': 'エキスパートの補足・見解'},
+            {'type': 'text', 'text': '補足本文。'}])
+        self.assertEqual([block['text'] for block in heading_blocks],
+                         ['エキスパートの補足・見解', '補足本文。'])
         item['url'] = 'https://news.yahoo.co.jp/articles/abc'
         self.assertIn('ココがポイント', build.render([item], datetime.now(timezone.utc)))
 
@@ -230,6 +260,7 @@ class ReaderTests(unittest.TestCase):
         self.assertIn('header{position:sticky;top:0', page)
         self.assertIn('border-bottom:1px solid #bbb', page)
         self.assertIn('aria-controls="news-nav" aria-expanded="false"', page)
+        self.assertIn('order:3;margin-left:auto;width:32px', page)
         self.assertIn('body.menu-open .layout nav{display:block}', page)
         self.assertIn('scroll-margin-top:calc(var(--header-height, 42px) + 12px)', page)
         self.assertIn('.feed article h2{color:#14532d}', page)
