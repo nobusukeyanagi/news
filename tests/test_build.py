@@ -218,6 +218,34 @@ class ReaderTests(unittest.TestCase):
         self.assertEqual(build.body_paragraphs('（ブルームバーグ）： 記事本文。\n（CNN） 続報。'),
                          ['記事本文。 続報。'])
 
+    def test_english_authors_and_heading_source_labels(self):
+        self.assertEqual(build.body_paragraphs('本文。\nKyu-seok Shim　Rishabh Jaiswal', edge=True),
+                         ['本文。'])
+        self.assertEqual(build.body_paragraphs('本文。 Kyu-seok Shim　Rishabh Jaiswal', edge=True),
+                         ['本文。'])
+        credits = [
+            'tenki.jp', '読売新聞オンライン', '共同通信', '毎日新聞', 'AERA with Kids＋',
+            '高校生新聞', '時事通信', '朝日新聞', 'Bloomberg', 'ロイター', 'CNN.co.jp',
+            'オリコン', 'スポニチアネックス', 'スポーツ報知', '産経新聞', '日テレNEWS NNN',
+            'デイリースポーツ', 'ゴルフダイジェスト・オンライン（GDO）', 'Full-Count',
+            '日刊スポーツ', 'HBCニュース北海道', 'ITmedia NEWS', '東海テレビ',
+            '読売新聞（ヨミドクター）', 'テレビ朝日系（ANN）',
+            'TBS NEWS DIG Powered by JNN', 'STVニュース北海道',
+        ]
+        for credit in credits:
+            with self.subTest(credit=credit):
+                self.assertEqual(build.strip_heading_credit('小見出し（' + credit + '）'), '小見出し')
+                self.assertEqual(build.strip_heading_credit('（' + credit + '）'), '')
+        self.assertEqual(build.strip_heading_credit(' - エキスパート - Yahoo!ニュース'), '')
+        item = {'title': '記事', 'category': '国内', 'topic_url': build.SOURCE,
+                'body': ['小見出し（共同通信）', '本文です。'],
+                'blocks': [{'type': 'heading', 'text': '小見出し（共同通信）'},
+                           {'type': 'heading', 'text': '（tenki.jp）'},
+                           {'type': 'text', 'text': '本文です。'}]}
+        page = build.render([item], datetime.now(timezone.utc))
+        self.assertIn('<p class="subheading">小見出し</p><p>本文です。</p>', page)
+        self.assertNotIn('（共同通信）', page)
+
     def test_expert_points_and_cited_excerpts_are_removed(self):
         excerpts = ['独ロ外相がＮＹで会談、黒海穀物輸出など協議 出典：',
                     '鉄は国家なり：戦争が試す鉄鋼業の底力',
@@ -280,6 +308,9 @@ class ReaderTests(unittest.TestCase):
         self.assertIn('@media(max-width:700px){body{font-size:17px;line-height:1.8}', page)
         self.assertIn('.updated{margin-left:0;font-size:14px}figcaption{font-size:14px}', page)
         self.assertIn('h2{font-size:20px}.layout nav h2{font-size:17px}', page)
+        self.assertIn('class="pull-refresh" role="status"', page)
+        self.assertIn("window.location.reload();", page)
+        self.assertIn("window.scrollY <= 0 && !document.body.classList.contains('menu-open')", page)
         self.assertIn('body.menu-open .layout nav{display:block}', page)
         self.assertIn('scroll-margin-top:calc(var(--header-height, 42px) + 12px)', page)
         self.assertIn('.feed article h2{color:#14532d}', page)
