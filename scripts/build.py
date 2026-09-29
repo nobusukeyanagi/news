@@ -330,6 +330,45 @@ def format_published(value):
         return str(value)
 
 
+BYLINE_BRACKET = re.compile(r'^【(?:[ァ-ヶー]{2,16}(?:AFP時事|共同|時事|ロイター|[一-龥]{3,6})|[一-龥]{3,6})】\s*')
+WIRE_DATELINE = re.compile(r'^\[[^\]\n]{1,35}(?:ロイター|Reuters|AFP)[^\]\n]*\]\s*[-－―]\s*', re.I)
+BYLINE_CREDIT = re.compile(
+    r'^(?:\(c\)|©)\s*\d{4}\s+.{2,60}$|'
+    r'^（(?:取材[・･/]文[・･/]?)?[一-龥ぁ-んァ-ヶー]{3,16}）$|'
+    r'^(?:日本気象協会(?:\s+本社)?\s+[一-龥]{1,5}[\s\u3000]*[一-龥]{1,5}|'
+    r'フジテレビ[、,]\s*政治部)$', re.I)
+BYLINE_AGENCY = re.compile(r'^(?:朝日新聞社|読売新聞社|毎日新聞社|日本経済新聞社|産経新聞社|共同通信社|時事通信社|AFP時事|ロイター)$')
+BYLINE_PERSON = re.compile(r'^(?:[一-龥]{3,6}|[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})$')
+
+
+def body_paragraphs(text, publisher='', edge=False):
+    """既存のスナップショットも含め、本文の段落と署名を表示時に整える。"""
+    paragraphs, current = [], []
+    for raw in text.replace('\r\n', '\n').split('\n'):
+        indented = raw.startswith(('　', '\u00a0'))
+        line = raw.lstrip(' \t\u3000\u00a0').strip()
+        line = WIRE_DATELINE.sub('', line)
+        line = BYLINE_BRACKET.sub('', line)
+        if (BYLINE_CREDIT.fullmatch(line) or BYLINE_AGENCY.fullmatch(line) or
+                (edge and line and (line == publisher or BYLINE_PERSON.fullmatch(line)))):
+            if current:
+                paragraphs.append(' '.join(current))
+                current = []
+            continue
+        if not line:
+            if current:
+                paragraphs.append(' '.join(current))
+                current = []
+        else:
+            if indented and current:
+                paragraphs.append(' '.join(current))
+                current = []
+            current.append(line)
+    if current:
+        paragraphs.append(' '.join(current))
+    return paragraphs
+
+
 def render(items, updated):
     esc = html.escape
     categories, sections = {}, []
@@ -339,30 +378,15 @@ def render(items, updated):
         meta = ' / '.join(filter(None, [item['category'], item.get('publisher', ''), format_published(item.get('published', ''))]))
         ordered = item.get('blocks') or ([{'type': 'image', **photo} for photo in item.get('images', [])] +
                                          [{'type': 'text', 'text': p} for p in item['body']])
+        text_positions = [i for i, block in enumerate(ordered) if block['type'] == 'text']
         content = []
-        for block in ordered:
+        for position, block in enumerate(ordered):
             if block['type'] == 'image':
                 caption = f'<figcaption>{esc(block["caption"])}</figcaption>' if block['caption'] else ''
                 content.append(f'<figure><img src="{esc(block["src"], quote=True)}" alt="記事に掲載された写真" loading="lazy" decoding="async">{caption}</figure>')
             else:
-                # A source paragraph may contain blank lines or an indented new
-                # line that marks another paragraph. Let CSS provide the gap.
-                lines = block['text'].replace('\r\n', '\n').split('\n')
-                paragraphs, current = [], []
-                for line in lines:
-                    indented = line.startswith(('　', '\u00a0'))
-                    line = line.lstrip(' \t\u3000\u00a0')
-                    if not line:
-                        if current:
-                            paragraphs.append(' '.join(current))
-                            current = []
-                    else:
-                        if indented and current:
-                            paragraphs.append(' '.join(current))
-                            current = []
-                        current.append(line)
-                if current:
-                    paragraphs.append(' '.join(current))
+                edge = position in text_positions[:2] or position in text_positions[-3:]
+                paragraphs = body_paragraphs(block['text'], item.get('publisher', ''), edge)
                 content.extend(f'<p>{esc(paragraph)}</p>' for paragraph in paragraphs)
         note = f'<p class="notice">{esc(item["note"])}</p>' if item.get('note') else ''
         full_title = item.get('article_title', '')

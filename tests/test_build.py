@@ -130,6 +130,27 @@ class ReaderTests(unittest.TestCase):
         self.assertNotIn('<br><br>', page)
         self.assertNotIn('<p>　', page)
 
+    def test_byline_and_agency_credits_are_removed_from_saved_articles(self):
+        credits = ['日本気象協会 本社 小野　聡子', 'フジテレビ,政治部', '（奥原慎平）',
+                   '（取材・文/大楽眞衣子）', '大楽眞衣子', '朝日新聞社',
+                   '【ワシントン平野光芳】', '(c)2026 Bloomberg L.P.',
+                   'Nectar Gan', 'Ben Blanchard',
+                   '[台北 ２８日 ロイター] -\u00a0', '【ヨハネスブルクAFP時事】',
+                   '【萩原桂菜】', '【山田豊】']
+        for credit in credits:
+            with self.subTest(credit=credit):
+                item = {'title': '記事', 'category': '国際', 'topic_url': build.SOURCE,
+                        'body': [credit, '本文は朝日新聞社に関するものです。', credit],
+                        'publisher': '朝日新聞社'}
+                page = build.render([item], datetime.now(timezone.utc))
+                self.assertIn('<p>本文は朝日新聞社に関するものです。</p>', page)
+                self.assertEqual(page.count('<article id="news-1">'), 1)
+                self.assertNotIn(f'<p>{credit}</p>', page)
+        self.assertEqual(build.body_paragraphs('【ワシントン平野光芳】記事本文\n[台北 ２８日 ロイター] - 続報'),
+                         ['記事本文 続報'])
+        self.assertEqual(build.body_paragraphs('【速報】新たな情報\n朝日新聞社は発表した。'),
+                         ['【速報】新たな情報 朝日新聞社は発表した。'])
+
     def test_compact_header_and_category_list(self):
         items = [
             {'title': '記事A', 'category': '国内', 'topic_url': build.SOURCE, 'body': ['本文A']},
