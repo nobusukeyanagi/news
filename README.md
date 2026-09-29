@@ -21,6 +21,7 @@ Yahoo!ニュースの https://news.yahoo.co.jp/topics に表示されている�
 3. 次回のニュース取得とPages公開が成功すると、そのチャンネルに公開ページのリンクを通知します。Secret未設定なら通知を省略します。
 
 定時更新・手動更新、および保存済み記事がなく再取得した更新が対象です。デザイン変更など、保存済み記事からページだけを再生成したときは通知しません。通知はPagesへの公開が完了した後に送ります。
+Discord通知が失敗した場合もPagesへの公開は完了しています。Actionsの「Notify Discord after news update」にHTTP状態コードとDiscordのエラー番号を表示します。Webhook URL自体はログに出しません。URL末尾にGitHub連携用の `/github` が付いていても、通常のメッセージ投稿用に変換します。
 
 ## 更新
 
