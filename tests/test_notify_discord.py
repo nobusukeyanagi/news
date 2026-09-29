@@ -18,6 +18,8 @@ class DiscordNotificationTests(unittest.TestCase):
         request = urlopen.call_args.args[0]
         self.assertEqual(request.full_url, 'https://discord.com/api/webhooks/123/secret')
         self.assertEqual(request.get_method(), 'POST')
+        self.assertEqual(request.get_header('User-agent'),
+                         'DiscordBot (https://github.com/nobusukeyanagi/news, 1.0)')
         self.assertEqual(json.loads(request.data), {
             'content': '📰 ニュースを更新しました\nhttps://example.github.io/news/',
             'allowed_mentions': {'parse': []},

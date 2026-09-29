@@ -27,7 +27,9 @@ def send(url, page_url):
     payload = {'content': '📰 ニュースを更新しました\n' + page_url,
                'allowed_mentions': {'parse': []}}
     request = urllib.request.Request(webhook_url(url), data=json.dumps(payload).encode('utf-8'),
-                                     headers={'Content-Type': 'application/json'}, method='POST')
+                                     headers={'Content-Type': 'application/json',
+                                              'User-Agent': 'DiscordBot (https://github.com/nobusukeyanagi/news, 1.0)'},
+                                     method='POST')
     for attempt in range(3):
         try:
             with urllib.request.urlopen(request, timeout=20):
