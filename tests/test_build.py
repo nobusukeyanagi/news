@@ -153,6 +153,22 @@ class ReaderTests(unittest.TestCase):
         self.assertNotIn('<br><br>', page)
         self.assertNotIn('<p>　', page)
 
+    def test_fullwidth_latin_letters_and_digits_are_halfwidth_in_visible_text(self):
+        item = {'title': '台風２６号 ＡＢＣａｂｃ', 'category': '国内２',
+                'publisher': 'ＴＢＳ', 'topic_url': build.SOURCE,
+                'url': 'https://news.yahoo.co.jp/articles/abc?source=ＡＢＣ',
+                'article_title': '第２報 ＸＹＺ', 'body': ['２０２６年のＡＩ記事'],
+                'blocks': [{'type': 'heading', 'text': '接近は３０日 ＡＩ'},
+                           {'type': 'text', 'text': '２０２６年のＡＩ記事'},
+                           {'type': 'image', 'src': 'images/one.jpg', 'caption': '写真２ ＡＢＣ'}],
+                'note': '続きは２ページ目'}
+        page = build.render([item], datetime.now(timezone.utc))
+        for expected in ('台風26号 ABCabc', '国内2 / TBS', '第2報 XYZ',
+                         '接近は30日 AI', '2026年のAI記事', '写真2 ABC', '続きは2ページ目'):
+            self.assertIn(expected, page)
+        self.assertIn('href="https://news.yahoo.co.jp/articles/abc?source=ＡＢＣ"', page)
+        self.assertNotIn('台風２６号', page)
+
     def test_byline_and_agency_credits_are_removed_from_saved_articles(self):
         credits = ['日本気象協会 本社 小野　聡子', 'フジテレビ,政治部', '（奥原慎平）',
                    '（取材・文/大楽眞衣子）', '大楽眞衣子', '朝日新聞社',

@@ -28,6 +28,9 @@ IMAGE_HOSTS = {'newsatcl-pctr.c.yimg.jp'}
 ARTICLE = re.compile(r'^/(?:expert/)?articles/[a-f0-9]+/?$')
 PICKUP = re.compile(r'^/pickup/\d+/?$')
 JST = ZoneInfo('Asia/Tokyo')
+FULLWIDTH_ALNUM = {code: code - 0xFEE0
+                   for start, end in ((0xFF10, 0xFF19), (0xFF21, 0xFF3A), (0xFF41, 0xFF5A))
+                   for code in range(start, end + 1)}
 
 
 def clean(text):
@@ -406,10 +409,13 @@ def without_expert_points(blocks):
 
 def render(items, updated):
     esc = html.escape
+    def display(value):
+        return esc(str(value).translate(FULLWIDTH_ALNUM))
+
     categories, sections = {}, []
     for n, item in enumerate(items, 1):
         title = item['title']
-        categories.setdefault(item['category'], []).append(f'<li><a href="#news-{n}">{esc(title)}</a></li>')
+        categories.setdefault(item['category'], []).append(f'<li><a href="#news-{n}">{display(title)}</a></li>')
         meta = ' / '.join(filter(None, [item['category'], item.get('publisher', ''), format_published(item.get('published', ''))]))
         ordered = item.get('blocks') or ([{'type': 'image', **photo} for photo in item.get('images', [])] +
                                          [{'type': 'text', 'text': p} for p in item['body']])
@@ -420,20 +426,20 @@ def render(items, updated):
         content = []
         for position, block in enumerate(ordered):
             if block['type'] == 'image':
-                caption = f'<figcaption>{esc(block["caption"])}</figcaption>' if block['caption'] else ''
+                caption = f'<figcaption>{display(block["caption"])}</figcaption>' if block['caption'] else ''
                 content.append(f'<figure><img src="{esc(block["src"], quote=True)}" alt="記事に掲載された写真" loading="lazy" decoding="async">{caption}</figure>')
             else:
                 edge = position in text_positions[:2] or position in text_positions[-3:]
                 paragraphs = body_paragraphs(block['text'], item.get('publisher', ''), edge)
                 paragraph_class = ' class="subheading"' if block['type'] == 'heading' else ''
-                content.extend(f'<p{paragraph_class}>{esc(paragraph)}</p>' for paragraph in paragraphs)
-        note = f'<p class="notice">{esc(item["note"])}</p>' if item.get('note') else ''
+                content.extend(f'<p{paragraph_class}>{display(paragraph)}</p>' for paragraph in paragraphs)
+        note = f'<p class="notice">{display(item["note"])}</p>' if item.get('note') else ''
         full_title = item.get('article_title', '')
-        subtitle = f'<p class="full-title">{esc(full_title)}</p>' if full_title and full_title != title else ''
-        sections.append(f'<article id="news-{n}"><h2>{esc(title)}</h2><p class="meta"><a href="{esc(url, quote=True)}" target="_blank" rel="noopener noreferrer nofollow">{esc(meta)}</a></p>{subtitle}{"".join(content)}{note}</article>')
+        subtitle = f'<p class="full-title">{display(full_title)}</p>' if full_title and full_title != title else ''
+        sections.append(f'<article id="news-{n}"><h2>{display(title)}</h2><p class="meta"><a href="{esc(url, quote=True)}" target="_blank" rel="noopener noreferrer nofollow">{display(meta)}</a></p>{subtitle}{"".join(content)}{note}</article>')
     updated_label = f'<time class="updated" datetime="{updated.isoformat()}">更新：{updated.astimezone(JST).strftime("%Y/%m/%d %H:%M")}</time>' if items else ''
     page_title = f'最新ニュース{len(items)}' if items else '最新ニュース'
-    contents = ''.join(f'<section class="category"><h2>{esc(category)}</h2><ul>{"".join(links)}</ul></section>' for category, links in categories.items())
+    contents = ''.join(f'<section class="category"><h2>{display(category)}</h2><ul>{"".join(links)}</ul></section>' for category, links in categories.items())
     news = ''.join(sections) or '<p>まだニュースを取得していません。GitHub Actionsの「Update news」を実行してください。</p>'
     return f'''<!doctype html>
 <html lang="ja"><head><meta charset="utf-8">
@@ -446,7 +452,7 @@ def render(items, updated):
 <style>
 *{{box-sizing:border-box}}html{{scroll-behavior:auto}}body{{margin:0;background:#fff;color:#202020;font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif;font-size:16px;line-height:1.9;overflow-wrap:anywhere}}figure{{margin:0 0 18px}}figure img{{display:block;width:auto;max-width:300px;height:auto;max-height:300px;object-fit:contain}}figcaption{{font-size:.8125rem;color:#555;line-height:1.55;margin-top:5px}}
 main{{max-width:1440px;margin:0 auto;padding:0 24px 56px}}header{{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:6px 16px;flex-wrap:wrap;min-height:42px;padding:3px 0;background:#fff;border-bottom:1px solid #bbb}}h1{{font-size:1.5rem;line-height:1.3;margin:0}}h1 a{{color:inherit;text-decoration:none}}h2{{font-size:1.3rem;line-height:1.55;margin:0 0 8px}}.feed article h2{{color:#14532d}}a{{color:#174c86;text-underline-offset:3px}}a:focus-visible{{outline:2px solid #174c86;outline-offset:4px}}.updated{{margin-left:auto}}.meta,.updated{{font-size:.875rem;color:#555}}.meta{{margin:4px 0 14px}}.meta a{{color:inherit}}.menu-toggle{{display:none}}.layout{{display:grid;grid-template-columns:minmax(230px,320px) minmax(0,1fr);gap:36px;align-items:start}}nav{{position:sticky;top:calc(var(--header-height, 42px) + 8px);max-height:calc(100dvh - var(--header-height, 42px) - 16px);overflow:auto;padding-top:12px}}nav h2{{font-size:1rem;line-height:1.4;margin:0 0 4px}}.category{{margin:0 0 18px}}.category ul{{list-style:none;margin:0;padding:0}}.category li{{padding:2px 0}}article{{border-top:1px solid #bbb;padding:28px 0;scroll-margin-top:calc(var(--header-height, 42px) + 12px)}}.feed article:first-child{{border-top:0;padding-top:12px}}article p{{margin:0 0 18px}}.subheading{{font-weight:700}}.full-title{{font-weight:600}}.notice{{padding:10px 14px;border-left:3px solid #999;background:#f5f5f5}}@media(max-width:700px){{main{{padding:0 16px 36px}}.layout{{display:block}}.menu-toggle{{display:inline-flex;align-items:center;justify-content:center;flex:none;order:3;margin-left:auto;width:32px;height:34px;border:0;background:transparent;color:inherit;padding:4px}}.hamburger{{display:flex;flex-direction:column;gap:4px}}.hamburger span{{display:block;width:20px;height:2px;background:currentColor}}h1{{font-size:1.25rem}}.updated{{margin-left:0;font-size:.75rem}}h2{{font-size:1.2rem}}.layout nav{{display:none;position:fixed;top:var(--header-height, 42px);left:0;right:0;z-index:19;max-height:calc(100dvh - var(--header-height, 42px));overflow:auto;padding:12px 16px;background:#fff;border-bottom:1px solid #bbb;box-shadow:0 5px 10px #0002}}body.menu-open .layout nav{{display:block}}}}@media print{{header{{position:static}}.menu-toggle,nav{{display:none!important}}main{{max-width:none;padding:0}}.layout{{display:block}}article{{break-inside:auto}}}}
-</style></head><body><main id="top"><header><button class="menu-toggle" type="button" aria-label="タイトル一覧を開く" aria-controls="news-nav" aria-expanded="false"><span class="hamburger" aria-hidden="true"><span></span><span></span><span></span></span></button><h1><a href="#top">{esc(page_title)}</a></h1>{updated_label}</header>
+</style></head><body><main id="top"><header><button class="menu-toggle" type="button" aria-label="タイトル一覧を開く" aria-controls="news-nav" aria-expanded="false"><span class="hamburger" aria-hidden="true"><span></span><span></span><span></span></span></button><h1><a href="#top">{display(page_title)}</a></h1>{updated_label}</header>
 <div class="layout"><nav id="news-nav" aria-label="タイトル一覧">{contents}</nav><div class="feed">
 {news}
 </div></div></main><script>
