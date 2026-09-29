@@ -345,7 +345,25 @@ def render(items, updated):
                 caption = f'<figcaption>{esc(block["caption"])}</figcaption>' if block['caption'] else ''
                 content.append(f'<figure><img src="{esc(block["src"], quote=True)}" alt="記事に掲載された写真" loading="lazy" decoding="async">{caption}</figure>')
             else:
-                content.append('<p>' + esc(block['text']).replace('\n', '<br>') + '</p>')
+                # A source paragraph may contain blank lines or an indented new
+                # line that marks another paragraph. Let CSS provide the gap.
+                lines = block['text'].replace('\r\n', '\n').split('\n')
+                paragraphs, current = [], []
+                for line in lines:
+                    indented = line.startswith(('　', '\u00a0'))
+                    line = line.lstrip(' \t\u3000\u00a0')
+                    if not line:
+                        if current:
+                            paragraphs.append(' '.join(current))
+                            current = []
+                    else:
+                        if indented and current:
+                            paragraphs.append(' '.join(current))
+                            current = []
+                        current.append(line)
+                if current:
+                    paragraphs.append(' '.join(current))
+                content.extend(f'<p>{esc(paragraph)}</p>' for paragraph in paragraphs)
         note = f'<p class="notice">{esc(item["note"])}</p>' if item.get('note') else ''
         full_title = item.get('article_title', '')
         subtitle = f'<p class="full-title">{esc(full_title)}</p>' if full_title and full_title != title else ''

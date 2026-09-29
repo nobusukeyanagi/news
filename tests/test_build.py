@@ -122,6 +122,14 @@ class ReaderTests(unittest.TestCase):
         self.assertIn('font-size:.8125rem', page)
         self.assertIn('max-width:300px;height:auto;max-height:300px', page)
 
+    def test_body_indentation_and_blank_lines_become_paragraph_spacing(self):
+        item = {'title': '記事', 'category': '国内', 'topic_url': build.SOURCE,
+                'body': ['　最初の段落\n\n　次の段落\n　さらに次の段落', '　別のブロック']}
+        page = build.render([item], datetime.now(timezone.utc))
+        self.assertIn('<p>最初の段落</p><p>次の段落</p><p>さらに次の段落</p><p>別のブロック</p>', page)
+        self.assertNotIn('<br><br>', page)
+        self.assertNotIn('<p>　', page)
+
     def test_compact_header_and_category_list(self):
         items = [
             {'title': '記事A', 'category': '国内', 'topic_url': build.SOURCE, 'body': ['本文A']},
