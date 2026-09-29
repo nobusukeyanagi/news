@@ -20,12 +20,14 @@ class ReaderTests(unittest.TestCase):
 
     def test_body_pagination_and_caption_exclusion(self):
         doc = '''<article><h1>サンプル</h1><div class="article_body">
+        <a href="/articles/abc/images/1"><img src="https://newsatcl-pctr.c.yimg.jp/photo.jpg">画像：提供元</a>
         <figure>写真の説明</figure><h2>小見出し</h2><p class="yjSlinkDirectlink">本文の例です。</p>
         <div class="related">関連ニュース</div></div>
         <a href="/articles/abc?page=2">次へ</a><a href="/articles/def?page=3">別の記事</a></article>'''
         item = build.parse_article(doc, 'https://news.yahoo.co.jp/articles/abc')
         self.assertEqual(item['body'], ['小見出し', '本文の例です。'])
         self.assertEqual(item['next_url'], 'https://news.yahoo.co.jp/articles/abc?page=2')
+        self.assertEqual(item['images'], [{'url': 'https://newsatcl-pctr.c.yimg.jp/photo.jpg', 'caption': '画像：提供元'}])
 
     def test_summary_is_not_used_as_body(self):
         item = build.parse_article('''<script type="application/ld+json">{
@@ -57,6 +59,14 @@ class ReaderTests(unittest.TestCase):
         self.assertNotIn('<img ', page)
         self.assertIn('noindex, nofollow', page)
         self.assertIn('&lt;script&gt;', page)
+
+    def test_photo_caption_and_columns(self):
+        page = build.render([{'title': '見出し', 'category': '国内', 'topic_url': build.SOURCE,
+                              'body': ['記事本文'], 'images': [{'src': 'images/p.jpg', 'caption': '<出典>'}]}],
+                            datetime.now(timezone.utc))
+        self.assertIn('grid-template-columns:minmax(230px,320px) minmax(0,1fr)', page)
+        self.assertIn('<figcaption>&lt;出典&gt;</figcaption>', page)
+        self.assertIn('font-size:.8125rem', page)
 
 
 if __name__ == '__main__':

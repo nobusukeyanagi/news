@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import html
 import json
 import re
@@ -20,6 +21,7 @@ from bs4 import BeautifulSoup
 SOURCE = 'https://news.yahoo.co.jp/topics'
 ORIGIN = 'https://news.yahoo.co.jp'
 AGENT = 'PersonalNewsReader/1.0'
+IMAGE_HOSTS = {'newsatcl-pctr.c.yimg.jp'}
 ARTICLE = re.compile(r'^/articles/[a-f0-9]+/?$')
 PICKUP = re.compile(r'^/pickup/\d+/?$')
 JST = ZoneInfo('Asia/Tokyo')
@@ -35,6 +37,13 @@ def article_url(url, base=SOURCE):
         return None
     page = urllib.parse.parse_qs(p.query).get('page', ['1'])[0]
     return ORIGIN + p.path.rstrip('/') + ('?page=' + page if page.isdigit() and int(page) > 1 else '')
+
+
+def image_url(url, base):
+    p = urllib.parse.urlsplit(urllib.parse.urljoin(base, url))
+    if p.scheme == 'https' and p.hostname in IMAGE_HOSTS and p.port is None:
+        return urllib.parse.urlunsplit(p)
+    return None
 
 
 class Client:
@@ -77,6 +86,44 @@ class Client:
         if url not in self.cache:
             self.cache[url] = self._get(url)
         return self.cache[url]
+
+    def save_image(self, url, directory):
+        """期限付き画像URLを公開時に保存して、更新まで表示可能にする。"""
+        if not image_url(url, url):
+            raise RuntimeError('許可されていない画像URL')
+        # CDN側にもrobots.txtがある場合はそれに従う。
+        origin = 'https://' + urllib.parse.urlsplit(url).hostname
+        if origin not in self.cache:
+            try:
+                with urllib.request.urlopen(origin + '/robots.txt', timeout=15) as response:
+                    rules = response.read(500_000).decode('utf-8', 'replace')
+            except urllib.error.HTTPError as error:
+                # 画像配信CDNはrobots.txtに400を返す場合がある。
+                if error.code not in (400, 404):
+                    raise
+                rules = 'User-agent: *\nAllow: /\n'
+            parser = urllib.robotparser.RobotFileParser()
+            parser.parse(rules.splitlines())
+            self.cache[origin] = parser
+        if not self.cache[origin].can_fetch(AGENT, url):
+            raise RuntimeError('画像CDNのrobots.txtにより取得不可')
+        request = urllib.request.Request(url, headers={'User-Agent': AGENT})
+        time.sleep(max(0, 1.0 - (time.monotonic() - self.last)))
+        self.last = time.monotonic()
+        with urllib.request.urlopen(request, timeout=25) as response:
+            if not image_url(response.url, response.url):
+                raise RuntimeError('画像が別サイトへ転送されました')
+            content_type = response.headers.get_content_type()
+            extension = {'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif'}.get(content_type)
+            if not extension:
+                raise RuntimeError('対応外の画像形式です')
+            raw = response.read(8_000_001)
+            if len(raw) > 8_000_000:
+                raise RuntimeError('画像サイズの上限を超過しました')
+        directory.mkdir(parents=True, exist_ok=True)
+        filename = hashlib.sha256(url.encode()).hexdigest()[:24] + extension
+        (directory / filename).write_bytes(raw)
+        return 'images/' + filename
 
 
 def parse_topics(document):
@@ -150,9 +197,18 @@ def parse_article(document, url):
     publisher = clean(str(author.get('name', '') if isinstance(author, dict) else author))
     published = metadata.get('datePublished', '')
     body = []
+    images = []
     # ページ全体やdescriptionを「本文」として扱わない。
     containers = soup.select('.article_body') or soup.select('[itemprop="articleBody"]')
     for container in containers:
+        for img in container.select('img'):
+            candidate = image_url(img.get('src') or img.get('data-src') or '', url)
+            if candidate and not any(pic['url'] == candidate for pic in images) and len(images) < 6:
+                figure = img.find_parent('figure')
+                caption_node = figure.find('figcaption') if figure else None
+                anchor = img.find_parent('a')
+                caption = clean(caption_node.get_text(' ', strip=True) if caption_node else (anchor.get_text(' ', strip=True) if anchor else img.get('alt', '')))
+                images.append({'url': candidate, 'caption': caption[:300]})
         for unwanted in container.select('script, style, figure, figcaption, aside, nav, button, iframe'):
             unwanted.decompose()
         # 写真説明・関連記事・広告を除外。
@@ -186,11 +242,11 @@ def parse_article(document, url):
     paywall = metadata.get('isAccessibleForFree') in (False, 'False', 'false')
     next_url = pages[min(pages)] if pages else None
     return {'article_title': title, 'publisher': publisher, 'published': published,
-            'body': body, 'next_url': next_url, 'paywall': paywall}
+            'body': body, 'next_url': next_url, 'paywall': paywall, 'images': images}
 
 
-def fetch_article(client, item):
-    result = dict(item, body=[], article_title='', publisher='', published='', note='')
+def fetch_article(client, item, image_dir=None):
+    result = dict(item, body=[], images=[], article_title='', publisher='', published='', note='')
     try:
         url = linked_article(client.get(item['topic_url']), item['topic_url'])
         result['url'] = url
@@ -203,6 +259,16 @@ def fetch_article(client, item):
             if len(seen) == 1:
                 result.update({k: parsed[k] for k in ('article_title', 'publisher', 'published')})
             result['body'].extend(parsed['body'])
+            if image_dir is not None:
+                for image in parsed['images']:
+                    if len(result['images']) >= 6:
+                        break
+                    try:
+                        saved = client.save_image(image['url'], image_dir)
+                        if not any(photo['src'] == saved for photo in result['images']):
+                            result['images'].append({'src': saved, 'caption': image['caption']})
+                    except (OSError, RuntimeError, urllib.error.URLError) as error:
+                        print(f'::warning::画像取得失敗 {type(error).__name__}: {error}', file=sys.stderr)
             url = parsed['next_url']
             if parsed['paywall']:
                 result['note'] = '公開されている部分のみ表示しています。続きは元記事をご確認ください。'
@@ -225,11 +291,12 @@ def render(items, updated):
         contents.append(f'<li><a href="#news-{n}">{esc(title)}</a></li>')
         meta = ' / '.join(filter(None, [item['category'], item.get('publisher', ''), item.get('published', '')]))
         paragraphs = ''.join('<p>' + esc(p).replace('\n', '<br>') + '</p>' for p in item['body'])
+        photos = ''.join(f'<figure><img src="{esc(photo["src"], quote=True)}" alt="記事に掲載された写真" loading="lazy" decoding="async">' + (f'<figcaption>{esc(photo["caption"])}</figcaption>' if photo['caption'] else '') + '</figure>' for photo in item.get('images', []))
         note = f'<p class="notice">{esc(item["note"])}</p>' if item.get('note') else ''
         full_title = item.get('article_title', '')
         subtitle = f'<p class="full-title">{esc(full_title)}</p>' if full_title and full_title != title else ''
         url = item.get('url') or item['topic_url']
-        sections.append(f'<article id="news-{n}"><h2>{esc(title)}</h2><p class="meta">{esc(meta)}</p>{subtitle}{paragraphs}{note}<p class="links"><a href="{esc(url, quote=True)}" target="_blank" rel="noopener noreferrer nofollow">元記事を読む</a> · <a href="#top">目次へ</a></p></article>')
+        sections.append(f'<article id="news-{n}"><h2>{esc(title)}</h2><p class="meta">{esc(meta)}</p>{subtitle}{photos}{paragraphs}{note}<p class="links"><a href="{esc(url, quote=True)}" target="_blank" rel="noopener noreferrer nofollow">元記事を読む</a> · <a href="#top">目次へ</a></p></article>')
     status = f'更新：{updated.astimezone(JST).strftime("%Y/%m/%d %H:%M")}（日本時間） · {len(items)}件 / 本文取得 {count}件'
     if not items:
         status = 'まだニュースを取得していません。GitHub Actionsの「Update news」を実行してください。'
@@ -240,13 +307,13 @@ def render(items, updated):
 <meta name="referrer" content="no-referrer">
 <title>ニュース一覧</title>
 <style>
-*{{box-sizing:border-box}}html{{scroll-behavior:auto}}body{{margin:0;background:#fff;color:#202020;font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif;font-size:16px;line-height:1.9;overflow-wrap:anywhere}}
-main{{max-width:880px;margin:0 auto;padding:28px 24px 56px}}h1{{font-size:1.6rem;margin:0 0 8px}}h2{{font-size:1.3rem;line-height:1.55;margin:0 0 8px}}a{{color:#174c86;text-underline-offset:3px}}a:focus-visible{{outline:2px solid #174c86;outline-offset:4px}}.meta,.schedule,.links{{font-size:.875rem;color:#555}}.meta{{margin:4px 0 14px}}.schedule{{margin:0 0 20px}}nav{{border-top:1px solid #ccc;padding-top:20px}}ol{{padding-left:1.6em;margin:0 0 28px}}li{{padding:3px 0}}article{{border-top:1px solid #bbb;padding:28px 0;scroll-margin-top:16px}}article p{{margin:0 0 18px}}.full-title{{font-weight:600}}.notice{{padding:10px 14px;border-left:3px solid #999;background:#f5f5f5}}footer{{border-top:1px solid #ccc;padding-top:20px;font-size:.875rem;color:#555}}@media(max-width:600px){{main{{padding:20px 16px 36px}}h2{{font-size:1.2rem}}}}@media print{{nav,.links,.schedule{{display:none}}main{{max-width:none;padding:0}}article{{break-inside:auto}}}}
+*{{box-sizing:border-box}}html{{scroll-behavior:auto}}body{{margin:0;background:#fff;color:#202020;font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif;font-size:16px;line-height:1.9;overflow-wrap:anywhere}}figure{{margin:0 0 18px}}figure img{{display:block;width:auto;max-width:100%;height:auto;max-height:540px;object-fit:contain}}figcaption{{font-size:.8125rem;color:#555;line-height:1.55;margin-top:5px}}
+main{{max-width:1440px;margin:0 auto;padding:28px 24px 56px}}h1{{font-size:1.6rem;margin:0 0 8px}}h2{{font-size:1.3rem;line-height:1.55;margin:0 0 8px}}a{{color:#174c86;text-underline-offset:3px}}a:focus-visible{{outline:2px solid #174c86;outline-offset:4px}}.meta,.schedule,.links{{font-size:.875rem;color:#555}}.meta{{margin:4px 0 14px}}.schedule{{margin:0 0 20px}}.layout{{display:grid;grid-template-columns:minmax(230px,320px) minmax(0,1fr);gap:36px;align-items:start}}nav{{position:sticky;top:16px;max-height:calc(100vh - 32px);overflow:auto;border-top:1px solid #ccc;padding-top:18px}}nav h2{{font-size:1rem}}ol{{padding-left:1.6em;margin:0 0 28px}}li{{padding:3px 0}}article{{border-top:1px solid #bbb;padding:28px 0;scroll-margin-top:16px}}article p{{margin:0 0 18px}}.full-title{{font-weight:600}}.notice{{padding:10px 14px;border-left:3px solid #999;background:#f5f5f5}}footer{{border-top:1px solid #ccc;padding-top:20px;font-size:.875rem;color:#555}}@media(max-width:700px){{main{{padding:20px 16px 36px}}.layout{{display:block}}nav{{position:static;max-height:none;overflow:visible}}h2{{font-size:1.2rem}}}}@media print{{nav,.links,.schedule{{display:none}}main{{max-width:none;padding:0}}.layout{{display:block}}article{{break-inside:auto}}}}
 </style></head><body><main id="top"><header><h1>ニュース一覧</h1><p class="meta">{esc(status)}</p><p class="schedule">毎日6:00・18:00に更新予定（日本時間）</p></header>
-<nav aria-label="ニュースの目次"><ol>{''.join(contents)}</ol></nav>
+<div class="layout"><nav aria-label="タイトル一覧"><h2>タイトル一覧</h2><ol>{''.join(contents)}</ol></nav><div class="feed">
 {''.join(sections)}
 <footer>取得元：<a href="{SOURCE}" target="_blank" rel="noopener noreferrer nofollow">Yahoo!ニュース トピックス一覧</a><br>本文は取得時点の内容です。訂正・更新・続きは元記事をご確認ください。</footer>
-</main></body></html>'''
+</div></div></main></body></html>'''
 
 
 def main():
@@ -256,6 +323,7 @@ def main():
     parser.add_argument('--empty', action='store_true', help='通信せず初回案内ページを生成')
     args = parser.parse_args()
     now = datetime.now(JST)
+    output = Path(args.output)
     items = []
     if not args.empty:
         client = Client()
@@ -264,11 +332,10 @@ def main():
             topics = topics[:args.limit]
         print(f'一覧 {len(topics)}件', flush=True)
         for n, item in enumerate(topics, 1):
-            items.append(fetch_article(client, item))
+            items.append(fetch_article(client, item, output / 'images'))
             print(f'{n}/{len(topics)} 本文取得={bool(items[-1]["body"])}', flush=True)
         if not any(i['body'] for i in items):
             raise RuntimeError('本文を1件も取得できなかったため公開を中止します。既存ページは維持されます。')
-    output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
     (output / 'index.html').write_text(render(items, now), encoding='utf-8')
     # noindexを読めるように、robots.txtによるクロール拒否は行わない。
