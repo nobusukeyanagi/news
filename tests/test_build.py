@@ -259,7 +259,7 @@ class ReaderTests(unittest.TestCase):
         credits = ['（ブルームバーグ）：', '（CNN）', '（長妻昭明）', '（染田屋竜太）',
                    '（宮田裕介）', 'Full-Count編集部',
                    '（9月25日放送 news every.『なるほどッ！』より）',
-                   'All Nippon NewsNetwork(ANN)', 'TBSテレビ']
+                   'All Nippon NewsNetwork(ANN)', 'TBSテレビ', 'テレビ朝日', '富山テレビ放送']
         for credit in credits:
             with self.subTest(credit=credit):
                 item = {'title': '記事', 'category': '国内', 'topic_url': build.SOURCE,
@@ -269,6 +269,8 @@ class ReaderTests(unittest.TestCase):
                 self.assertNotIn('<p>' + credit + '</p>', page)
         self.assertEqual(build.body_paragraphs('（ブルームバーグ）： 記事本文。\n（CNN） 続報。'),
                          ['記事本文。 続報。'])
+        self.assertEqual(build.body_paragraphs('記事本文。\nテレビ朝日\n富山テレビ放送', edge=True),
+                         ['記事本文。'])
 
     def test_english_authors_and_heading_source_labels(self):
         self.assertEqual(build.body_paragraphs('本文。\nKyu-seok Shim　Rishabh Jaiswal', edge=True),

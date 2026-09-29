@@ -380,7 +380,7 @@ BYLINE_CREDIT = re.compile(
     r'^（\d{1,2}月\d{1,2}日放送\s+.+より）$|'
     r'^(?:日本気象協会(?:\s+本社)?\s+[一-龥]{1,5}[\s\u3000]*[一-龥]{1,5}|'
     r'フジテレビ[、,]\s*政治部)$', re.I)
-BYLINE_AGENCY = re.compile(r'^(?:朝日新聞社|読売新聞社|毎日新聞社|日本経済新聞社|産経新聞社|共同通信社|時事通信社|AFP時事|ロイター|Full-Count編集部|All Nippon NewsNetwork\(ANN\)|TBSテレビ)$')
+BYLINE_AGENCY = re.compile(r'^(?:朝日新聞社|読売新聞社|毎日新聞社|日本経済新聞社|産経新聞社|共同通信社|時事通信社|AFP時事|ロイター|Full-Count編集部|All Nippon NewsNetwork\(ANN\)|TBSテレビ|テレビ朝日|富山テレビ放送)$')
 BYLINE_PERSON = re.compile(r'^(?:[一-龥]{3,6}|[A-Z][a-z]+(?:-[a-z]+)?(?:\s+[A-Z][a-z]+(?:-[a-z]+)?){1,3})$')
 BYLINE_SUFFIX = re.compile(r'([。.!！?？」』）])\s*(?:（(?:取材[・･/]文[・･/]?)?[一-龥]{3,6}）|【(?:[ァ-ヶー]{2,16})?[一-龥]{3,6}】)\s*$')
 ENGLISH_BYLINE_SUFFIX = re.compile(r'([。.!！?])\s+[A-Z][a-z]+(?:-[a-z]+)?(?:\s+[A-Z][a-z]+(?:-[a-z]+)?){1,3}\s*$')
