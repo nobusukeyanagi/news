@@ -290,11 +290,10 @@ def fetch_article(client, item, image_dir=None):
 
 def render(items, updated):
     esc = html.escape
-    contents, sections = [], []
-    count = sum(bool(i['body']) for i in items)
+    categories, sections = {}, []
     for n, item in enumerate(items, 1):
         title = item['title']
-        contents.append(f'<li><a href="#news-{n}">{esc(title)}</a></li>')
+        categories.setdefault(item['category'], []).append(f'<li><a href="#news-{n}">{esc(title)}</a></li>')
         meta = ' / '.join(filter(None, [item['category'], item.get('publisher', ''), item.get('published', '')]))
         paragraphs = ''.join('<p>' + esc(p).replace('\n', '<br>') + '</p>' for p in item['body'])
         photos = ''.join(f'<figure><img src="{esc(photo["src"], quote=True)}" alt="記事に掲載された写真" loading="lazy" decoding="async">' + (f'<figcaption>{esc(photo["caption"])}</figcaption>' if photo['caption'] else '') + '</figure>' for photo in item.get('images', []))
@@ -303,9 +302,9 @@ def render(items, updated):
         subtitle = f'<p class="full-title">{esc(full_title)}</p>' if full_title and full_title != title else ''
         url = item.get('url') or item['topic_url']
         sections.append(f'<article id="news-{n}"><h2>{esc(title)}</h2><p class="meta">{esc(meta)}</p>{subtitle}{photos}{paragraphs}{note}<p class="links"><a href="{esc(url, quote=True)}" target="_blank" rel="noopener noreferrer nofollow">元記事を読む</a> · <a href="#top">目次へ</a></p></article>')
-    status = f'更新：{updated.astimezone(JST).strftime("%Y/%m/%d %H:%M")}（日本時間） · {len(items)}件 / 本文取得 {count}件'
-    if not items:
-        status = 'まだニュースを取得していません。GitHub Actionsの「Update news」を実行してください。'
+    updated_label = f'<time class="updated" datetime="{updated.isoformat()}">更新：{updated.astimezone(JST).strftime("%Y/%m/%d %H:%M")}</time>' if items else ''
+    contents = ''.join(f'<section class="category"><h2>{esc(category)}</h2><ul>{"".join(links)}</ul></section>' for category, links in categories.items())
+    news = ''.join(sections) or '<p>まだニュースを取得していません。GitHub Actionsの「Update news」を実行してください。</p>'
     return f'''<!doctype html>
 <html lang="ja"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -313,11 +312,11 @@ def render(items, updated):
 <meta name="referrer" content="no-referrer">
 <title>ニュース一覧</title>
 <style>
-*{{box-sizing:border-box}}html{{scroll-behavior:auto}}body{{margin:0;background:#fff;color:#202020;font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif;font-size:16px;line-height:1.9;overflow-wrap:anywhere}}figure{{margin:0 0 18px}}figure img{{display:block;width:auto;max-width:100%;height:auto;max-height:540px;object-fit:contain}}figcaption{{font-size:.8125rem;color:#555;line-height:1.55;margin-top:5px}}
-main{{max-width:1440px;margin:0 auto;padding:28px 24px 56px}}h1{{font-size:1.6rem;margin:0 0 8px}}h2{{font-size:1.3rem;line-height:1.55;margin:0 0 8px}}a{{color:#174c86;text-underline-offset:3px}}a:focus-visible{{outline:2px solid #174c86;outline-offset:4px}}.meta,.schedule,.links{{font-size:.875rem;color:#555}}.meta{{margin:4px 0 14px}}.schedule{{margin:0 0 20px}}.layout{{display:grid;grid-template-columns:minmax(230px,320px) minmax(0,1fr);gap:36px;align-items:start}}nav{{position:sticky;top:16px;max-height:calc(100vh - 32px);overflow:auto;border-top:1px solid #ccc;padding-top:18px}}nav h2{{font-size:1rem}}ol{{padding-left:1.6em;margin:0 0 28px}}li{{padding:3px 0}}article{{border-top:1px solid #bbb;padding:28px 0;scroll-margin-top:16px}}article p{{margin:0 0 18px}}.full-title{{font-weight:600}}.notice{{padding:10px 14px;border-left:3px solid #999;background:#f5f5f5}}footer{{border-top:1px solid #ccc;padding-top:20px;font-size:.875rem;color:#555}}@media(max-width:700px){{main{{padding:20px 16px 36px}}.layout{{display:block}}nav{{position:static;max-height:none;overflow:visible}}h2{{font-size:1.2rem}}}}@media print{{nav,.links,.schedule{{display:none}}main{{max-width:none;padding:0}}.layout{{display:block}}article{{break-inside:auto}}}}
-</style></head><body><main id="top"><header><h1>ニュース一覧</h1><p class="meta">{esc(status)}</p><p class="schedule">毎日6:00・18:00に更新予定（日本時間）</p></header>
-<div class="layout"><nav aria-label="タイトル一覧"><h2>タイトル一覧</h2><ol>{''.join(contents)}</ol></nav><div class="feed">
-{''.join(sections)}
+*{{box-sizing:border-box}}html{{scroll-behavior:auto}}body{{margin:0;background:#fff;color:#202020;font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif;font-size:16px;line-height:1.9;overflow-wrap:anywhere}}figure{{margin:0 0 18px}}figure img{{display:block;width:auto;max-width:300px;height:auto;max-height:300px;object-fit:contain}}figcaption{{font-size:.8125rem;color:#555;line-height:1.55;margin-top:5px}}
+main{{max-width:1440px;margin:0 auto;padding:14px 24px 56px}}header{{display:flex;align-items:baseline;justify-content:space-between;gap:8px 24px;flex-wrap:wrap;margin-bottom:12px}}h1{{font-size:1.6rem;line-height:1.4;margin:0}}h2{{font-size:1.3rem;line-height:1.55;margin:0 0 8px}}a{{color:#174c86;text-underline-offset:3px}}a:focus-visible{{outline:2px solid #174c86;outline-offset:4px}}.meta,.links,.updated{{font-size:.875rem;color:#555}}.meta{{margin:4px 0 14px}}.layout{{display:grid;grid-template-columns:minmax(230px,320px) minmax(0,1fr);gap:36px;align-items:start}}nav{{position:sticky;top:16px;max-height:calc(100vh - 32px);overflow:auto;border-top:1px solid #ccc;padding-top:12px}}nav h2{{font-size:1rem;line-height:1.4;margin:0 0 4px}}.category{{margin:0 0 18px}}.category ul{{list-style:none;margin:0;padding:0}}.category li{{padding:2px 0}}article{{border-top:1px solid #bbb;padding:28px 0;scroll-margin-top:16px}}article p{{margin:0 0 18px}}.full-title{{font-weight:600}}.notice{{padding:10px 14px;border-left:3px solid #999;background:#f5f5f5}}footer{{border-top:1px solid #ccc;padding-top:20px;font-size:.875rem;color:#555}}@media(max-width:700px){{main{{padding:12px 16px 36px}}.layout{{display:block}}nav{{position:static;max-height:none;overflow:visible}}h2{{font-size:1.2rem}}}}@media print{{nav,.links{{display:none}}main{{max-width:none;padding:0}}.layout{{display:block}}article{{break-inside:auto}}}}
+</style></head><body><main id="top"><header><h1>ニュース一覧</h1>{updated_label}</header>
+<div class="layout"><nav aria-label="タイトル一覧">{contents}</nav><div class="feed">
+{news}
 <footer>取得元：<a href="{SOURCE}" target="_blank" rel="noopener noreferrer nofollow">Yahoo!ニュース トピックス一覧</a><br>本文は取得時点の内容です。訂正・更新・続きは元記事をご確認ください。</footer>
 </div></div></main></body></html>'''
 

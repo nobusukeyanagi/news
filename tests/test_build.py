@@ -74,6 +74,22 @@ class ReaderTests(unittest.TestCase):
         self.assertIn('grid-template-columns:minmax(230px,320px) minmax(0,1fr)', page)
         self.assertIn('<figcaption>&lt;出典&gt;</figcaption>', page)
         self.assertIn('font-size:.8125rem', page)
+        self.assertIn('max-width:300px;height:auto;max-height:300px', page)
+
+    def test_compact_header_and_category_list(self):
+        items = [
+            {'title': '記事A', 'category': '国内', 'topic_url': build.SOURCE, 'body': ['本文A']},
+            {'title': '記事B', 'category': '国際', 'topic_url': build.SOURCE, 'body': ['本文B']},
+        ]
+        page = build.render(items, datetime(2026, 9, 29, 1, 23, tzinfo=timezone.utc))
+        self.assertIn('<header><h1>ニュース一覧</h1><time', page)
+        self.assertIn('更新：2026/09/29 10:23', page)
+        self.assertIn('<h2>国内</h2><ul>', page)
+        self.assertIn('<h2>国際</h2><ul>', page)
+        self.assertNotIn('<ol>', page)
+        self.assertNotIn('<h2>タイトル一覧</h2>', page)
+        self.assertNotIn('本文取得 2件', page)
+        self.assertNotIn('毎日6:00・18:00に更新予定', page)
 
 
 if __name__ == '__main__':
