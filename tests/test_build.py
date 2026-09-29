@@ -28,6 +28,36 @@ class ReaderTests(unittest.TestCase):
         self.assertEqual(item['body'], ['小見出し', '本文の例です。'])
         self.assertEqual(item['next_url'], 'https://news.yahoo.co.jp/articles/abc?page=2')
         self.assertEqual(item['images'], [{'url': 'https://newsatcl-pctr.c.yimg.jp/photo.jpg', 'caption': '画像：提供元'}])
+        self.assertEqual([block['type'] for block in item['blocks']], ['image', 'text', 'text'])
+
+    def test_images_follow_original_article_order_without_duplicate_captions(self):
+        photo1 = 'https://newsatcl-pctr.c.yimg.jp/one.jpg'
+        photo2 = 'https://newsatcl-pctr.c.yimg.jp/two.jpg'
+        article = f'''<div class="article_body">
+            <p>最初の段落</p>
+            <a><img src="{photo1}"><p>画像：一枚目</p></a>
+            <p>次の段落</p>
+            <a><img src="{photo2}"><p>画像：二枚目</p></a>
+            <p>最後の段落</p></div>'''
+
+        class Client:
+            def get(self, url):
+                if '/pickup/' in url:
+                    return '<a href="/articles/abc">記事全文を読む</a>'
+                return article
+
+            def save_image(self, url, directory):
+                return 'images/' + url.rsplit('/', 1)[-1]
+
+        item = build.fetch_article(Client(), {'title': 'テスト', 'category': '国内',
+            'topic_url': 'https://news.yahoo.co.jp/pickup/1'}, Path('/unused'))
+        page = build.render([item], datetime.now(timezone.utc))
+        markers = ['最初の段落', 'images/one.jpg', '画像：一枚目', '次の段落',
+                   'images/two.jpg', '画像：二枚目', '最後の段落']
+        self.assertEqual(sorted(page.index(marker) for marker in markers),
+                         [page.index(marker) for marker in markers])
+        self.assertEqual(page.count('画像：一枚目'), 1)
+        self.assertEqual(page.count('画像：二枚目'), 1)
 
     def test_summary_is_not_used_as_body(self):
         item = build.parse_article('''<script type="application/ld+json">{
@@ -90,6 +120,17 @@ class ReaderTests(unittest.TestCase):
         self.assertNotIn('<h2>タイトル一覧</h2>', page)
         self.assertNotIn('本文取得 2件', page)
         self.assertNotIn('毎日6:00・18:00に更新予定', page)
+
+    def test_article_time_is_jst_and_meta_links_to_source(self):
+        item = {'title': '記事', 'category': '国内', 'publisher': 'tenki.jp',
+                'topic_url': 'https://news.yahoo.co.jp/pickup/1',
+                'url': 'https://news.yahoo.co.jp/articles/abc',
+                'published': '2026-09-28T20:54:36Z', 'body': ['本文']}
+        page = build.render([item], datetime.now(timezone.utc))
+        self.assertIn('>国内 / tenki.jp / 2026/09/29 05:54</a></p>', page)
+        self.assertIn('<p class="meta"><a href="https://news.yahoo.co.jp/articles/abc"', page)
+        self.assertNotIn('元記事を読む', page)
+        self.assertNotIn('目次へ', page)
 
 
 if __name__ == '__main__':

@@ -203,37 +203,53 @@ def parse_article(document, url):
     publisher = clean(str(author.get('name', '') if isinstance(author, dict) else author))
     published = metadata.get('datePublished', '')
     body = []
+    blocks = []
     images = []
     # ページ全体やdescriptionを「本文」として扱わない。
     containers = soup.select('.article_body') or soup.select('[itemprop="articleBody"]')
     if not containers and '/expert/articles/' in urllib.parse.urlsplit(url).path:
         containers = soup.select('article section')
     for container in containers:
-        for img in container.select('img'):
-            candidate = image_url(img.get('src') or img.get('data-src') or '', url)
-            if candidate and not any(pic['url'] == candidate for pic in images) and len(images) < 6:
-                figure = img.find_parent('figure')
-                caption_node = figure.find('figcaption') if figure else None
-                anchor = img.find_parent('a')
-                caption = clean(caption_node.get_text(' ', strip=True) if caption_node else (anchor.get_text(' ', strip=True) if anchor else img.get('alt', '')))
-                images.append({'url': candidate, 'caption': caption[:300]})
-        for unwanted in container.select('script, style, figure, figcaption, aside, nav, button, iframe'):
+        # 関連記事・広告を除外し、本文のタグを元記事の順番で走査する。
+        for unwanted in container.select('script, style, aside, nav, button, iframe, [class*="related"], [class*="Related"], [class*="advert"]'):
             unwanted.decompose()
-        # 写真説明・関連記事・広告を除外。
-        for unwanted in container.select('[class*="caption"], [class*="Caption"], [class*="related"], [class*="Related"], [class*="advert"]'):
-            unwanted.decompose()
-        blocks = container.select('p, h2, h3, h4')
-        if blocks:
-            for block in blocks:
-                text = clean(block.get_text('\n', strip=True))
+        elements = container.select('img, p, h2, h3, h4')
+        if elements:
+            for element in elements:
+                if element.name == 'img':
+                    candidate = image_url(element.get('src') or element.get('data-src') or '', url)
+                    if candidate and not any(pic['url'] == candidate for pic in images) and len(images) < 6:
+                        figure = element.find_parent('figure')
+                        caption_node = figure.find('figcaption') if figure else None
+                        anchor = element.find_parent('a')
+                        caption = clean(caption_node.get_text(' ', strip=True) if caption_node else (anchor.get_text(' ', strip=True) if anchor else element.get('alt', '')))
+                        image = {'url': candidate, 'caption': caption[:300]}
+                        images.append(image)
+                        blocks.append({'type': 'image', **image})
+                    continue
+                # 写真リンク・figure内のキャプションを本文として繰り返さない。
+                image_link = element.find_parent('a')
+                figure = element.find_parent('figure')
+                in_caption = any('caption' in css_class.lower()
+                                 for parent in element.parents
+                                 for css_class in parent.get('class', []))
+                if ((image_link and image_link.find('img')) or
+                        (figure and figure.find('img')) or
+                        element.find_parent('figcaption') or
+                        in_caption):
+                    continue
+                text = clean(element.get_text('\n', strip=True))
                 if text:
                     body.append(text)
+                    blocks.append({'type': 'text', 'text': text})
         else:
             text = clean(container.get_text('\n', strip=True))
             if text:
                 body.append(text)
+                blocks.append({'type': 'text', 'text': text})
     if not body and isinstance(metadata.get('articleBody'), str):
         body = [clean(p) for p in metadata['articleBody'].split('\n') if clean(p)]
+        blocks.extend({'type': 'text', 'text': p} for p in body)
     current = int(urllib.parse.parse_qs(urllib.parse.urlsplit(url).query).get('page', ['1'])[0])
     pages = {}
     base_path = urllib.parse.urlsplit(url).path
@@ -248,11 +264,11 @@ def parse_article(document, url):
     paywall = metadata.get('isAccessibleForFree') in (False, 'False', 'false')
     next_url = pages[min(pages)] if pages else None
     return {'article_title': title, 'publisher': publisher, 'published': published,
-            'body': body, 'next_url': next_url, 'paywall': paywall, 'images': images}
+            'body': body, 'blocks': blocks, 'next_url': next_url, 'paywall': paywall, 'images': images}
 
 
 def fetch_article(client, item, image_dir=None):
-    result = dict(item, body=[], images=[], article_title='', publisher='', published='', note='')
+    result = dict(item, body=[], blocks=[], images=[], article_title='', publisher='', published='', note='')
     try:
         url = linked_article(client.get(item['topic_url']), item['topic_url'])
         result['url'] = url
@@ -264,15 +280,17 @@ def fetch_article(client, item, image_dir=None):
                 raise RuntimeError('本文が見つかりません（動画・有料記事・掲載終了・ページ構造変更など）')
             if len(seen) == 1:
                 result.update({k: parsed[k] for k in ('article_title', 'publisher', 'published')})
-            result['body'].extend(parsed['body'])
-            if image_dir is not None:
-                for image in parsed['images']:
-                    if len(result['images']) >= 6:
-                        break
+            for block in parsed['blocks']:
+                if block['type'] == 'text':
+                    result['body'].append(block['text'])
+                    result['blocks'].append(block)
+                elif image_dir is not None and len(result['images']) < 6:
                     try:
-                        saved = client.save_image(image['url'], image_dir)
+                        saved = client.save_image(block['url'], image_dir)
                         if not any(photo['src'] == saved for photo in result['images']):
-                            result['images'].append({'src': saved, 'caption': image['caption']})
+                            photo = {'src': saved, 'caption': block['caption']}
+                            result['images'].append(photo)
+                            result['blocks'].append({'type': 'image', **photo})
                     except (OSError, RuntimeError, urllib.error.URLError) as error:
                         print(f'::warning::画像取得失敗 {type(error).__name__}: {error}', file=sys.stderr)
             url = parsed['next_url']
@@ -288,20 +306,39 @@ def fetch_article(client, item, image_dir=None):
     return result
 
 
+def format_published(value):
+    if not value:
+        return ''
+    try:
+        published = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+        if published.tzinfo is None:
+            published = published.replace(tzinfo=JST)
+        return published.astimezone(JST).strftime('%Y/%m/%d %H:%M')
+    except ValueError:
+        return str(value)
+
+
 def render(items, updated):
     esc = html.escape
     categories, sections = {}, []
     for n, item in enumerate(items, 1):
         title = item['title']
         categories.setdefault(item['category'], []).append(f'<li><a href="#news-{n}">{esc(title)}</a></li>')
-        meta = ' / '.join(filter(None, [item['category'], item.get('publisher', ''), item.get('published', '')]))
-        paragraphs = ''.join('<p>' + esc(p).replace('\n', '<br>') + '</p>' for p in item['body'])
-        photos = ''.join(f'<figure><img src="{esc(photo["src"], quote=True)}" alt="記事に掲載された写真" loading="lazy" decoding="async">' + (f'<figcaption>{esc(photo["caption"])}</figcaption>' if photo['caption'] else '') + '</figure>' for photo in item.get('images', []))
+        meta = ' / '.join(filter(None, [item['category'], item.get('publisher', ''), format_published(item.get('published', ''))]))
+        ordered = item.get('blocks') or ([{'type': 'image', **photo} for photo in item.get('images', [])] +
+                                         [{'type': 'text', 'text': p} for p in item['body']])
+        content = []
+        for block in ordered:
+            if block['type'] == 'image':
+                caption = f'<figcaption>{esc(block["caption"])}</figcaption>' if block['caption'] else ''
+                content.append(f'<figure><img src="{esc(block["src"], quote=True)}" alt="記事に掲載された写真" loading="lazy" decoding="async">{caption}</figure>')
+            else:
+                content.append('<p>' + esc(block['text']).replace('\n', '<br>') + '</p>')
         note = f'<p class="notice">{esc(item["note"])}</p>' if item.get('note') else ''
         full_title = item.get('article_title', '')
         subtitle = f'<p class="full-title">{esc(full_title)}</p>' if full_title and full_title != title else ''
         url = item.get('url') or item['topic_url']
-        sections.append(f'<article id="news-{n}"><h2>{esc(title)}</h2><p class="meta">{esc(meta)}</p>{subtitle}{photos}{paragraphs}{note}<p class="links"><a href="{esc(url, quote=True)}" target="_blank" rel="noopener noreferrer nofollow">元記事を読む</a> · <a href="#top">目次へ</a></p></article>')
+        sections.append(f'<article id="news-{n}"><h2>{esc(title)}</h2><p class="meta"><a href="{esc(url, quote=True)}" target="_blank" rel="noopener noreferrer nofollow">{esc(meta)}</a></p>{subtitle}{"".join(content)}{note}</article>')
     updated_label = f'<time class="updated" datetime="{updated.isoformat()}">更新：{updated.astimezone(JST).strftime("%Y/%m/%d %H:%M")}</time>' if items else ''
     contents = ''.join(f'<section class="category"><h2>{esc(category)}</h2><ul>{"".join(links)}</ul></section>' for category, links in categories.items())
     news = ''.join(sections) or '<p>まだニュースを取得していません。GitHub Actionsの「Update news」を実行してください。</p>'
@@ -313,7 +350,7 @@ def render(items, updated):
 <title>ニュース一覧</title>
 <style>
 *{{box-sizing:border-box}}html{{scroll-behavior:auto}}body{{margin:0;background:#fff;color:#202020;font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif;font-size:16px;line-height:1.9;overflow-wrap:anywhere}}figure{{margin:0 0 18px}}figure img{{display:block;width:auto;max-width:300px;height:auto;max-height:300px;object-fit:contain}}figcaption{{font-size:.8125rem;color:#555;line-height:1.55;margin-top:5px}}
-main{{max-width:1440px;margin:0 auto;padding:14px 24px 56px}}header{{display:flex;align-items:baseline;justify-content:space-between;gap:8px 24px;flex-wrap:wrap;margin-bottom:12px}}h1{{font-size:1.6rem;line-height:1.4;margin:0}}h2{{font-size:1.3rem;line-height:1.55;margin:0 0 8px}}a{{color:#174c86;text-underline-offset:3px}}a:focus-visible{{outline:2px solid #174c86;outline-offset:4px}}.meta,.links,.updated{{font-size:.875rem;color:#555}}.meta{{margin:4px 0 14px}}.layout{{display:grid;grid-template-columns:minmax(230px,320px) minmax(0,1fr);gap:36px;align-items:start}}nav{{position:sticky;top:16px;max-height:calc(100vh - 32px);overflow:auto;border-top:1px solid #ccc;padding-top:12px}}nav h2{{font-size:1rem;line-height:1.4;margin:0 0 4px}}.category{{margin:0 0 18px}}.category ul{{list-style:none;margin:0;padding:0}}.category li{{padding:2px 0}}article{{border-top:1px solid #bbb;padding:28px 0;scroll-margin-top:16px}}article p{{margin:0 0 18px}}.full-title{{font-weight:600}}.notice{{padding:10px 14px;border-left:3px solid #999;background:#f5f5f5}}footer{{border-top:1px solid #ccc;padding-top:20px;font-size:.875rem;color:#555}}@media(max-width:700px){{main{{padding:12px 16px 36px}}.layout{{display:block}}nav{{position:static;max-height:none;overflow:visible}}h2{{font-size:1.2rem}}}}@media print{{nav,.links{{display:none}}main{{max-width:none;padding:0}}.layout{{display:block}}article{{break-inside:auto}}}}
+main{{max-width:1440px;margin:0 auto;padding:14px 24px 56px}}header{{display:flex;align-items:baseline;justify-content:space-between;gap:8px 24px;flex-wrap:wrap;margin-bottom:12px}}h1{{font-size:1.6rem;line-height:1.4;margin:0}}h2{{font-size:1.3rem;line-height:1.55;margin:0 0 8px}}a{{color:#174c86;text-underline-offset:3px}}a:focus-visible{{outline:2px solid #174c86;outline-offset:4px}}.meta,.updated{{font-size:.875rem;color:#555}}.meta{{margin:4px 0 14px}}.meta a{{color:inherit}}.layout{{display:grid;grid-template-columns:minmax(230px,320px) minmax(0,1fr);gap:36px;align-items:start}}nav{{position:sticky;top:16px;max-height:calc(100vh - 32px);overflow:auto;border-top:1px solid #ccc;padding-top:12px}}nav h2{{font-size:1rem;line-height:1.4;margin:0 0 4px}}.category{{margin:0 0 18px}}.category ul{{list-style:none;margin:0;padding:0}}.category li{{padding:2px 0}}article{{border-top:1px solid #bbb;padding:28px 0;scroll-margin-top:16px}}article p{{margin:0 0 18px}}.full-title{{font-weight:600}}.notice{{padding:10px 14px;border-left:3px solid #999;background:#f5f5f5}}footer{{border-top:1px solid #ccc;padding-top:20px;font-size:.875rem;color:#555}}@media(max-width:700px){{main{{padding:12px 16px 36px}}.layout{{display:block}}nav{{position:static;max-height:none;overflow:visible}}h2{{font-size:1.2rem}}}}@media print{{nav{{display:none}}main{{max-width:none;padding:0}}.layout{{display:block}}article{{break-inside:auto}}}}
 </style></head><body><main id="top"><header><h1>ニュース一覧</h1>{updated_label}</header>
 <div class="layout"><nav aria-label="タイトル一覧">{contents}</nav><div class="feed">
 {news}
