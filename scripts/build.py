@@ -375,6 +375,8 @@ def body_paragraphs(text, publisher='', edge=False):
         line = WIRE_DATELINE.sub('', line)
         line = BYLINE_BRACKET.sub('', line)
         line = BYLINE_PREFIX.sub('', line)
+        # 元サイトでは配信元が通常の段落や同じ段落の改行に入ることもある。
+        line = strip_heading_credit(line, publisher)
         if (BYLINE_CREDIT.fullmatch(line) or BYLINE_AGENCY.fullmatch(line) or
                 (line and line == publisher) or
                 (edge and line and BYLINE_PERSON.fullmatch(line.replace('　', ' ')))):
@@ -393,7 +395,8 @@ def body_paragraphs(text, publisher='', edge=False):
             current.append(line)
     if current:
         paragraphs.append(' '.join(current))
-    paragraphs = [BYLINE_SUFFIX.sub(r'\1', paragraph) for paragraph in paragraphs]
+    paragraphs = [strip_heading_credit(BYLINE_SUFFIX.sub(r'\1', paragraph), publisher)
+                  for paragraph in paragraphs]
     if edge:
         paragraphs = [ENGLISH_BYLINE_SUFFIX.sub(r'\1', paragraph) for paragraph in paragraphs]
     return paragraphs
@@ -402,9 +405,9 @@ def body_paragraphs(text, publisher='', edge=False):
 def strip_heading_credit(paragraph, publisher=''):
     paragraph = EXPERT_BRAND.sub('', paragraph)
     for name in (*HEADING_CREDITS, publisher):
-        if name and paragraph.rstrip().endswith('（' + name + '）'):
-            paragraph = paragraph.rstrip()[:-len(name) - 2].rstrip()
-            break
+        if name:
+            paragraph = re.sub(r'[ \t\u3000\u00a0]*' + re.escape('（' + name + '）') +
+                               r'[ \t\u3000\u00a0]*', ' ', paragraph)
     return re.sub(r'\s*（(?:取材[・･/]文[・･/]?)?[一-龥]{3,6}）$', '', paragraph).strip()
 
 
@@ -454,13 +457,11 @@ def render(items, updated):
             else:
                 edge = position in text_positions[:2] or position in text_positions[-3:]
                 paragraphs = body_paragraphs(block['text'], item.get('publisher', ''), edge)
-                if block['type'] == 'heading':
-                    paragraphs = [text for paragraph in paragraphs
-                                  if (text := strip_heading_credit(paragraph, item.get('publisher', '')))]
+                paragraphs = [paragraph for paragraph in paragraphs if paragraph]
                 paragraph_class = ' class="subheading"' if block['type'] == 'heading' else ''
                 content.extend(f'<p{paragraph_class}>{display(paragraph)}</p>' for paragraph in paragraphs)
         note = f'<p class="notice">{display(item["note"])}</p>' if item.get('note') else ''
-        full_title = item.get('article_title', '')
+        full_title = strip_heading_credit(item.get('article_title', ''), item.get('publisher', ''))
         subtitle = f'<p class="full-title">{display(full_title)}</p>' if full_title and full_title != title else ''
         sections.append(f'<article id="news-{n}"><h2>{display(title)}</h2><p class="meta"><a href="{esc(url, quote=True)}" target="_blank" rel="noopener noreferrer nofollow">{display(meta)}</a></p>{subtitle}{"".join(content)}{note}</article>')
     updated_label = f'<time class="updated" datetime="{updated.isoformat()}">更新：{updated.astimezone(JST).strftime("%Y-%m-%d %H:%M")}</time>' if items else ''

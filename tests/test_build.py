@@ -245,6 +245,18 @@ class ReaderTests(unittest.TestCase):
         page = build.render([item], datetime.now(timezone.utc))
         self.assertIn('<p class="subheading">小見出し</p><p>本文です。</p>', page)
         self.assertNotIn('（共同通信）', page)
+        for credit in credits:
+            with self.subTest(text_block_credit=credit):
+                item = {'title': '記事', 'category': '国内', 'topic_url': build.SOURCE,
+                        'article_title': '元記事の見出し（' + credit + '）',
+                        'body': ['小見出し（' + credit + '）\n（' + credit + '）\n本文です。'],
+                        'blocks': [{'type': 'text', 'text': '小見出し（' + credit + '）\n（' + credit + '）\n本文です。'}]}
+                page = build.render([item], datetime.now(timezone.utc))
+                self.assertIn('<p class="full-title">元記事の見出し</p>', page)
+                self.assertIn('<p>小見出し</p><p>本文です。</p>', page)
+                self.assertNotIn('（' + credit + '）', page)
+                self.assertEqual(build.body_paragraphs('見出し（' + credit + '） 続く文章。'),
+                                 ['見出し 続く文章。'])
 
     def test_expert_points_and_cited_excerpts_are_removed(self):
         excerpts = ['独ロ外相がＮＹで会談、黒海穀物輸出など協議 出典：',
