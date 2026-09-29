@@ -266,7 +266,7 @@ class ReaderTests(unittest.TestCase):
         ]
         page = build.render(items, datetime(2026, 9, 29, 1, 23, tzinfo=timezone.utc))
         self.assertIn('<h1><a href="#top">最新ニュース2</a></h1><time', page)
-        self.assertIn('更新：2026/09/29 10:23', page)
+        self.assertIn('更新：2026-09-29 10:23', page)
         self.assertIn('<h2>国内</h2><ul>', page)
         self.assertIn('<h2>国際</h2><ul>', page)
         self.assertNotIn('<ol>', page)
@@ -277,7 +277,7 @@ class ReaderTests(unittest.TestCase):
         self.assertIn('border-bottom:1px solid #bbb', page)
         self.assertIn('aria-controls="news-nav" aria-expanded="false"', page)
         self.assertIn('order:3;margin-left:auto;width:32px', page)
-        self.assertIn('@media(max-width:700px){body{font-size:17px}', page)
+        self.assertIn('@media(max-width:700px){body{font-size:17px;line-height:1.8}', page)
         self.assertIn('.updated{margin-left:0;font-size:14px}figcaption{font-size:14px}', page)
         self.assertIn('h2{font-size:20px}.layout nav h2{font-size:17px}', page)
         self.assertIn('body.menu-open .layout nav{display:block}', page)
@@ -291,10 +291,11 @@ class ReaderTests(unittest.TestCase):
                 'url': 'https://news.yahoo.co.jp/articles/abc',
                 'published': '2026-09-28T20:54:36Z', 'body': ['本文']}
         page = build.render([item], datetime.now(timezone.utc))
-        self.assertIn('>国内 / tenki.jp / 2026/09/29 05:54</a></p>', page)
+        self.assertIn('>国内 / tenki.jp / 2026-09-29 05:54</a></p>', page)
         self.assertIn('<p class="meta"><a href="https://news.yahoo.co.jp/articles/abc"', page)
         self.assertNotIn('元記事を読む', page)
         self.assertNotIn('目次へ', page)
+        self.assertEqual(build.format_published('2026/09/29 配信'), '2026-09-29 配信')
 
     def test_rebuild_from_snapshot_does_not_fetch_news(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -312,7 +313,7 @@ class ReaderTests(unittest.TestCase):
                                                                                  side_effect=AssertionError('network')):
                 build.main()
             page = (site / 'index.html').read_text(encoding='utf-8')
-            self.assertIn('更新：2026/09/29 06:00', page)
+            self.assertIn('更新：2026-09-29 06:00', page)
             self.assertLess(page.index('images/one.jpg'), page.index('本文'))
             self.assertIn('<link rel="icon" href="favicon.ico"', page)
             self.assertIn('<link rel="apple-touch-icon" href="apple-touch-icon.png"', page)
