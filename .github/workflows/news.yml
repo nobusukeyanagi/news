@@ -2,8 +2,8 @@ name: Update news
 
 on:
   schedule:
-    # UTC 21:00 / 09:00 = 日本時間 06:00 / 18:00
-    - cron: '0 9,21 * * *'
+    # UTC 18:00 / 06:00 = 日本時間 翌日03:00 / 同日15:00
+    - cron: '0 6,18 * * *'
   workflow_dispatch:
   push:
     branches: [main]
@@ -39,9 +39,11 @@ jobs:
         id: build
         shell: bash
         run: |
-          if [[ "$GITHUB_EVENT_NAME" == "push" && -f site/snapshot.json ]]; then
-            python scripts/build.py --from-snapshot site/snapshot.json --output site
+          if [[ "$GITHUB_EVENT_NAME" == "push" && -f site/snapshot.json ]] &&
+             python scripts/build.py --from-snapshot site/snapshot.json --output site; then
+            echo '保存済みデータからページを再生成しました'
           else
+            rm -rf site
             python scripts/build.py --output site
             echo 'fresh=true' >> "$GITHUB_OUTPUT"
           fi
