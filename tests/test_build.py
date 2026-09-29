@@ -148,6 +148,15 @@ class ReaderTests(unittest.TestCase):
         self.assertEqual(page.count('画像：一枚目'), 1)
         self.assertEqual(page.count('画像：二枚目'), 1)
 
+    def test_sibling_caption_is_displayed_once_beneath_image(self):
+        doc = '''<div class="article_body"><p>本文です。</p>
+        <div class="photo-wrap"><img src="https://newsatcl-pctr.c.yimg.jp/photo.jpg">
+        <p class="photo-caption">写真：現場の様子（提供）</p></div><p>続報です。</p></div>'''
+        item = build.parse_article(doc, 'https://news.yahoo.co.jp/articles/abc')
+        self.assertEqual(item['images'][0]['caption'], '写真：現場の様子（提供）')
+        self.assertEqual(item['body'], ['本文です。', '続報です。'])
+        self.assertEqual([block['type'] for block in item['blocks']], ['text', 'image', 'text'])
+
     def test_unshown_link_text_is_removed_from_article_body(self):
         doc = '''<div class="article_body">
           <p>前段 <a href="/articles/elsewhere">【写真】別の記事</a> 後段</p>

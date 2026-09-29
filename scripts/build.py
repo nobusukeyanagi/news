@@ -26,7 +26,7 @@ AGENT = 'PersonalNewsReader/1.0'
 TOPIC_CATEGORIES = ('国内', '国際', '経済', 'エンタメ', 'スポーツ', 'IT', '科学', '地域')
 TOPICS_PER_CATEGORY = 8
 # 本文抽出方法が変わったとき、旧データをそのまま再描画しない。
-SNAPSHOT_VERSION = 4
+SNAPSHOT_VERSION = 5
 IMAGE_HOSTS = {'newsatcl-pctr.c.yimg.jp'}
 ARTICLE = re.compile(r'^/(?:expert/)?articles/[a-f0-9]+/?$')
 PICKUP = re.compile(r'^/pickup/\d+/?$')
@@ -53,6 +53,35 @@ def image_url(url, base):
     if p.scheme == 'https' and p.hostname in IMAGE_HOSTS and p.port is None:
         return urllib.parse.urlunsplit(p)
     return None
+
+
+def image_caption(img):
+    """写真に隣接するキャプションを探し、記事本文からは独立させる。"""
+    figure = img.find_parent('figure')
+    if figure:
+        node = figure.find('figcaption')
+        if node:
+            return clean(node.get_text(' ', strip=True))[:300]
+    anchor = img.find_parent('a')
+    if anchor:
+        caption = clean(anchor.get_text(' ', strip=True))
+        if caption:
+            return caption[:300]
+    # 画像とキャプションが同じラッパー内の兄弟要素になっている記事。
+    ancestor = img.parent
+    for _ in range(4):
+        if not ancestor or ancestor.name in ('article', 'section', 'body'):
+            break
+        caption_node = ancestor.find(
+            lambda node: node.name in ('p', 'div', 'span', 'figcaption') and
+            any('caption' in value.lower() for value in node.get('class', [])) and
+            not node.find('img'))
+        if caption_node:
+            caption = clean(caption_node.get_text(' ', strip=True))
+            if caption:
+                return caption[:300]
+        ancestor = ancestor.parent
+    return clean(img.get('alt', ''))[:300]
 
 
 class Client:
@@ -267,10 +296,7 @@ def parse_article(document, url):
                 if element.name == 'img':
                     candidate = image_url(element.get('src') or element.get('data-src') or '', url)
                     if candidate and not any(pic['url'] == candidate for pic in images) and len(images) < 6:
-                        figure = element.find_parent('figure')
-                        caption_node = figure.find('figcaption') if figure else None
-                        anchor = element.find_parent('a')
-                        caption = clean(caption_node.get_text(' ', strip=True) if caption_node else (anchor.get_text(' ', strip=True) if anchor else element.get('alt', '')))
+                        caption = image_caption(element)
                         image = {'url': candidate, 'caption': caption[:300]}
                         images.append(image)
                         blocks.append({'type': 'image', **image})
@@ -279,7 +305,7 @@ def parse_article(document, url):
                 image_link = element.find_parent('a')
                 figure = element.find_parent('figure')
                 in_caption = any('caption' in css_class.lower()
-                                 for parent in element.parents
+                                 for parent in (element, *element.parents)
                                  for css_class in parent.get('class', []))
                 if ((image_link and image_link.find('img')) or
                         (figure and figure.find('img')) or
