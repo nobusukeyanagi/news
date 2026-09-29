@@ -6,6 +6,7 @@ import hashlib
 import html
 import json
 import re
+import shutil
 import sys
 import time
 import urllib.error
@@ -414,6 +415,8 @@ def render(items, updated):
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex">
 <meta name="referrer" content="no-referrer">
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="apple-touch-icon.png" sizes="180x180">
 <title>ニュース一覧</title>
 <style>
 *{{box-sizing:border-box}}html{{scroll-behavior:auto}}body{{margin:0;background:#fff;color:#202020;font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif;font-size:16px;line-height:1.9;overflow-wrap:anywhere}}figure{{margin:0 0 18px}}figure img{{display:block;width:auto;max-width:300px;height:auto;max-height:300px;object-fit:contain}}figcaption{{font-size:.8125rem;color:#555;line-height:1.55;margin-top:5px}}
@@ -476,6 +479,8 @@ def main():
             raise RuntimeError('本文を1件も取得できなかったため公開を中止します。既存ページは維持されます。')
     output.mkdir(parents=True, exist_ok=True)
     (output / 'index.html').write_text(render(items, now), encoding='utf-8')
+    for icon in ('favicon.ico', 'apple-touch-icon.png'):
+        shutil.copyfile(Path(__file__).resolve().parents[1] / icon, output / icon)
     if not args.from_snapshot and not args.empty:
         (output / 'snapshot.json').write_text(
             json.dumps({'format_version': SNAPSHOT_VERSION, 'updated': now.isoformat(), 'items': items}, ensure_ascii=False), encoding='utf-8')

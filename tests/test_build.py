@@ -235,6 +235,10 @@ class ReaderTests(unittest.TestCase):
             page = (site / 'index.html').read_text(encoding='utf-8')
             self.assertIn('更新：2026/09/29 06:00', page)
             self.assertLess(page.index('images/one.jpg'), page.index('本文'))
+            self.assertIn('<link rel="icon" href="favicon.ico"', page)
+            self.assertIn('<link rel="apple-touch-icon" href="apple-touch-icon.png"', page)
+            self.assertTrue((site / 'favicon.ico').is_file())
+            self.assertTrue((site / 'apple-touch-icon.png').is_file())
 
     def test_old_snapshot_must_refetch_after_extraction_change(self):
         with tempfile.TemporaryDirectory() as directory:
