@@ -1,7 +1,11 @@
 import importlib.util
+import json
+import sys
+import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location('build', Path(__file__).parents[1] / 'scripts/build.py')
 build = importlib.util.module_from_spec(spec)
@@ -131,6 +135,24 @@ class ReaderTests(unittest.TestCase):
         self.assertIn('<p class="meta"><a href="https://news.yahoo.co.jp/articles/abc"', page)
         self.assertNotIn('元記事を読む', page)
         self.assertNotIn('目次へ', page)
+
+    def test_rebuild_from_snapshot_does_not_fetch_news(self):
+        with tempfile.TemporaryDirectory() as directory:
+            site = Path(directory)
+            (site / 'images').mkdir()
+            (site / 'images' / 'one.jpg').write_bytes(b'photo')
+            snapshot = {'updated': '2026-09-29T06:00:00+09:00', 'items': [{
+                'title': '保存した記事', 'category': '国内', 'topic_url': build.SOURCE,
+                'body': ['本文'], 'blocks': [{'type': 'image', 'src': 'images/one.jpg',
+                                             'caption': '撮影者'}, {'type': 'text', 'text': '本文'}]}]}
+            (site / 'snapshot.json').write_text(json.dumps(snapshot), encoding='utf-8')
+            with patch.object(sys, 'argv', ['build.py', '--from-snapshot', str(site / 'snapshot.json'),
+                                            '--output', str(site)]), patch.object(build, 'Client',
+                                                                                 side_effect=AssertionError('network')):
+                build.main()
+            page = (site / 'index.html').read_text(encoding='utf-8')
+            self.assertIn('更新：2026/09/29 06:00', page)
+            self.assertLess(page.index('images/one.jpg'), page.index('本文'))
 
 
 if __name__ == '__main__':

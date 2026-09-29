@@ -363,11 +363,23 @@ def main():
     parser.add_argument('--output', default='site')
     parser.add_argument('--limit', type=int, default=0, help='取得テスト用。0は一覧全件')
     parser.add_argument('--empty', action='store_true', help='通信せず初回案内ページを生成')
+    parser.add_argument('--from-snapshot', type=Path, help='保存した記事と画像を使ってHTMLだけ再生成')
     args = parser.parse_args()
     now = datetime.now(JST)
     output = Path(args.output)
     items = []
-    if not args.empty:
+    if args.from_snapshot:
+        snapshot = json.loads(args.from_snapshot.read_text(encoding='utf-8'))
+        items = snapshot['items']
+        now = datetime.fromisoformat(snapshot['updated'])
+        if not items or not any(item.get('body') for item in items):
+            raise RuntimeError('保存済みの記事がありません')
+        for item in items:
+            for block in item.get('blocks', []):
+                if block['type'] == 'image' and not (output / block['src']).is_file():
+                    raise RuntimeError(f'保存済み画像が見つかりません: {block["src"]}')
+        print(f'保存済みの{len(items)}件からHTMLを再生成します（ニュースの再取得なし）', flush=True)
+    elif not args.empty:
         client = Client()
         topics = parse_topics(client.get(SOURCE))
         if args.limit > 0:
@@ -380,6 +392,9 @@ def main():
             raise RuntimeError('本文を1件も取得できなかったため公開を中止します。既存ページは維持されます。')
     output.mkdir(parents=True, exist_ok=True)
     (output / 'index.html').write_text(render(items, now), encoding='utf-8')
+    if not args.from_snapshot and not args.empty:
+        (output / 'snapshot.json').write_text(
+            json.dumps({'updated': now.isoformat(), 'items': items}, ensure_ascii=False), encoding='utf-8')
     # noindexを読めるように、robots.txtによるクロール拒否は行わない。
     (output / 'robots.txt').write_text('User-agent: *\nDisallow:\n', encoding='utf-8')
     (output / '.nojekyll').touch()
