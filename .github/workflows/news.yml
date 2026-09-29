@@ -1,0 +1,52 @@
+name: Update news
+
+on:
+  schedule:
+    # UTC 21:00 / 09:00 = 日本時間 06:00 / 18:00
+    - cron: '0 9,21 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: news-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Fetch news and build page
+        run: python scripts/build.py --output site
+      - name: Package page
+        run: tar --dereference --hard-dereference -C site -cf "$RUNNER_TEMP/artifact.tar" .
+      - name: Upload Pages artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: github-pages
+          path: ${{ runner.temp }}/artifact.tar
+          retention-days: 1
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v5
