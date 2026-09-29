@@ -63,6 +63,18 @@ class ReaderTests(unittest.TestCase):
         self.assertEqual(page.count('画像：一枚目'), 1)
         self.assertEqual(page.count('画像：二枚目'), 1)
 
+    def test_unshown_link_text_is_removed_from_article_body(self):
+        doc = '''<div class="article_body">
+          <p>前段 <a href="/articles/elsewhere">【写真】別の記事</a> 後段</p>
+          <p><a href="https://other.example.com/story">【一目でわかる世界情勢】米中の「敵」と「味方」</a></p>
+          <a href="/articles/abc/images/1"><img src="https://newsatcl-pctr.c.yimg.jp/photo.jpg"><p>画像：提供元</p></a>
+          <p>通常の本文</p>
+        </div>'''
+        item = build.parse_article(doc, 'https://news.yahoo.co.jp/articles/abc')
+        self.assertEqual(item['body'], ['前段 後段', '通常の本文'])
+        self.assertEqual([block['type'] for block in item['blocks']], ['text', 'image', 'text'])
+        self.assertEqual(item['images'][0]['caption'], '画像：提供元')
+
     def test_summary_is_not_used_as_body(self):
         item = build.parse_article('''<script type="application/ld+json">{
         "@type":"NewsArticle", "description":"本文ではない概要"}</script>
@@ -129,6 +141,8 @@ class ReaderTests(unittest.TestCase):
         self.assertIn('aria-controls="news-nav" aria-expanded="false"', page)
         self.assertIn('body.menu-open .layout nav{display:block}', page)
         self.assertIn('scroll-margin-top:calc(var(--header-height, 42px) + 12px)', page)
+        self.assertIn('.feed article h2{color:#14532d}', page)
+        self.assertNotIn('nav h2{color:#14532d}', page)
 
     def test_article_time_is_jst_and_meta_links_to_source(self):
         item = {'title': '記事', 'category': '国内', 'publisher': 'tenki.jp',
@@ -146,7 +160,8 @@ class ReaderTests(unittest.TestCase):
             site = Path(directory)
             (site / 'images').mkdir()
             (site / 'images' / 'one.jpg').write_bytes(b'photo')
-            snapshot = {'updated': '2026-09-29T06:00:00+09:00', 'items': [{
+            snapshot = {'format_version': build.SNAPSHOT_VERSION,
+                        'updated': '2026-09-29T06:00:00+09:00', 'items': [{
                 'title': '保存した記事', 'category': '国内', 'topic_url': build.SOURCE,
                 'body': ['本文'], 'blocks': [{'type': 'image', 'src': 'images/one.jpg',
                                              'caption': '撮影者'}, {'type': 'text', 'text': '本文'}]}]}
@@ -158,6 +173,16 @@ class ReaderTests(unittest.TestCase):
             page = (site / 'index.html').read_text(encoding='utf-8')
             self.assertIn('更新：2026/09/29 06:00', page)
             self.assertLess(page.index('images/one.jpg'), page.index('本文'))
+
+    def test_old_snapshot_must_refetch_after_extraction_change(self):
+        with tempfile.TemporaryDirectory() as directory:
+            site = Path(directory)
+            (site / 'snapshot.json').write_text(json.dumps({'updated': '2026-09-29T06:00:00+09:00',
+                                                               'items': [{'body': ['旧形式']}]}), encoding='utf-8')
+            with patch.object(sys, 'argv', ['build.py', '--from-snapshot', str(site / 'snapshot.json'),
+                                            '--output', str(site)]):
+                with self.assertRaisesRegex(RuntimeError, '取り直します'):
+                    build.main()
 
 
 if __name__ == '__main__':

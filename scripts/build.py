@@ -21,6 +21,8 @@ from bs4 import BeautifulSoup
 SOURCE = 'https://news.yahoo.co.jp/topics'
 ORIGIN = 'https://news.yahoo.co.jp'
 AGENT = 'PersonalNewsReader/1.0'
+# 本文抽出方法が変わったとき、旧データをそのまま再描画しない。
+SNAPSHOT_VERSION = 2
 IMAGE_HOSTS = {'newsatcl-pctr.c.yimg.jp'}
 ARTICLE = re.compile(r'^/(?:expert/)?articles/[a-f0-9]+/?$')
 PICKUP = re.compile(r'^/pickup/\d+/?$')
@@ -213,6 +215,15 @@ def parse_article(document, url):
         # 関連記事・広告を除外し、本文のタグを元記事の順番で走査する。
         for unwanted in container.select('script, style, aside, nav, button, iframe, [class*="related"], [class*="Related"], [class*="advert"]'):
             unwanted.decompose()
+        # 別ページの本文を掲載していないため、そこへ誘導する文言も本文に残さない。
+        # 写真リンクには画像とキャプションが含まれるため、ここでは保持する。
+        paragraphs_with_removed_links = set()
+        for link in container.select('a[href]'):
+            if not link.find('img'):
+                parent = link.find_parent(['p', 'h2', 'h3', 'h4'])
+                if parent:
+                    paragraphs_with_removed_links.add(id(parent))
+                link.decompose()
         elements = container.select('img, p, h2, h3, h4')
         if elements:
             for element in elements:
@@ -238,7 +249,8 @@ def parse_article(document, url):
                         element.find_parent('figcaption') or
                         in_caption):
                     continue
-                text = clean(element.get_text('\n', strip=True))
+                separator = ' ' if id(element) in paragraphs_with_removed_links else '\n'
+                text = clean(element.get_text(separator, strip=True))
                 if text:
                     body.append(text)
                     blocks.append({'type': 'text', 'text': text})
@@ -351,7 +363,7 @@ def render(items, updated):
 <title>ニュース一覧</title>
 <style>
 *{{box-sizing:border-box}}html{{scroll-behavior:auto}}body{{margin:0;background:#fff;color:#202020;font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif;font-size:16px;line-height:1.9;overflow-wrap:anywhere}}figure{{margin:0 0 18px}}figure img{{display:block;width:auto;max-width:300px;height:auto;max-height:300px;object-fit:contain}}figcaption{{font-size:.8125rem;color:#555;line-height:1.55;margin-top:5px}}
-main{{max-width:1440px;margin:0 auto;padding:0 24px 56px}}header{{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:6px 16px;flex-wrap:wrap;min-height:42px;padding:3px 0;background:#fff;border-bottom:1px solid #bbb}}h1{{font-size:1.5rem;line-height:1.3;margin:0}}h1 a{{color:inherit;text-decoration:none}}h2{{font-size:1.3rem;line-height:1.55;margin:0 0 8px}}a{{color:#174c86;text-underline-offset:3px}}a:focus-visible{{outline:2px solid #174c86;outline-offset:4px}}.updated{{margin-left:auto}}.meta,.updated{{font-size:.875rem;color:#555}}.meta{{margin:4px 0 14px}}.meta a{{color:inherit}}.menu-toggle{{display:none}}.layout{{display:grid;grid-template-columns:minmax(230px,320px) minmax(0,1fr);gap:36px;align-items:start}}nav{{position:sticky;top:calc(var(--header-height, 42px) + 8px);max-height:calc(100dvh - var(--header-height, 42px) - 16px);overflow:auto;padding-top:12px}}nav h2{{font-size:1rem;line-height:1.4;margin:0 0 4px}}.category{{margin:0 0 18px}}.category ul{{list-style:none;margin:0;padding:0}}.category li{{padding:2px 0}}article{{border-top:1px solid #bbb;padding:28px 0;scroll-margin-top:calc(var(--header-height, 42px) + 12px)}}.feed article:first-child{{border-top:0;padding-top:12px}}article p{{margin:0 0 18px}}.full-title{{font-weight:600}}.notice{{padding:10px 14px;border-left:3px solid #999;background:#f5f5f5}}footer{{border-top:1px solid #ccc;padding-top:20px;font-size:.875rem;color:#555}}@media(max-width:700px){{main{{padding:0 16px 36px}}.layout{{display:block}}.menu-toggle{{display:inline-flex;align-items:center;justify-content:center;flex:none;width:32px;height:34px;border:0;background:transparent;color:inherit;padding:4px}}.hamburger{{display:flex;flex-direction:column;gap:4px}}.hamburger span{{display:block;width:20px;height:2px;background:currentColor}}h1{{font-size:1.25rem}}.updated{{font-size:.75rem}}h2{{font-size:1.2rem}}.layout nav{{display:none;position:fixed;top:var(--header-height, 42px);left:0;right:0;z-index:19;max-height:calc(100dvh - var(--header-height, 42px));overflow:auto;padding:12px 16px;background:#fff;border-bottom:1px solid #bbb;box-shadow:0 5px 10px #0002}}body.menu-open .layout nav{{display:block}}}}@media print{{header{{position:static}}.menu-toggle,nav{{display:none!important}}main{{max-width:none;padding:0}}.layout{{display:block}}article{{break-inside:auto}}}}
+main{{max-width:1440px;margin:0 auto;padding:0 24px 56px}}header{{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:6px 16px;flex-wrap:wrap;min-height:42px;padding:3px 0;background:#fff;border-bottom:1px solid #bbb}}h1{{font-size:1.5rem;line-height:1.3;margin:0}}h1 a{{color:inherit;text-decoration:none}}h2{{font-size:1.3rem;line-height:1.55;margin:0 0 8px}}.feed article h2{{color:#14532d}}a{{color:#174c86;text-underline-offset:3px}}a:focus-visible{{outline:2px solid #174c86;outline-offset:4px}}.updated{{margin-left:auto}}.meta,.updated{{font-size:.875rem;color:#555}}.meta{{margin:4px 0 14px}}.meta a{{color:inherit}}.menu-toggle{{display:none}}.layout{{display:grid;grid-template-columns:minmax(230px,320px) minmax(0,1fr);gap:36px;align-items:start}}nav{{position:sticky;top:calc(var(--header-height, 42px) + 8px);max-height:calc(100dvh - var(--header-height, 42px) - 16px);overflow:auto;padding-top:12px}}nav h2{{font-size:1rem;line-height:1.4;margin:0 0 4px}}.category{{margin:0 0 18px}}.category ul{{list-style:none;margin:0;padding:0}}.category li{{padding:2px 0}}article{{border-top:1px solid #bbb;padding:28px 0;scroll-margin-top:calc(var(--header-height, 42px) + 12px)}}.feed article:first-child{{border-top:0;padding-top:12px}}article p{{margin:0 0 18px}}.full-title{{font-weight:600}}.notice{{padding:10px 14px;border-left:3px solid #999;background:#f5f5f5}}footer{{border-top:1px solid #ccc;padding-top:20px;font-size:.875rem;color:#555}}@media(max-width:700px){{main{{padding:0 16px 36px}}.layout{{display:block}}.menu-toggle{{display:inline-flex;align-items:center;justify-content:center;flex:none;width:32px;height:34px;border:0;background:transparent;color:inherit;padding:4px}}.hamburger{{display:flex;flex-direction:column;gap:4px}}.hamburger span{{display:block;width:20px;height:2px;background:currentColor}}h1{{font-size:1.25rem}}.updated{{font-size:.75rem}}h2{{font-size:1.2rem}}.layout nav{{display:none;position:fixed;top:var(--header-height, 42px);left:0;right:0;z-index:19;max-height:calc(100dvh - var(--header-height, 42px));overflow:auto;padding:12px 16px;background:#fff;border-bottom:1px solid #bbb;box-shadow:0 5px 10px #0002}}body.menu-open .layout nav{{display:block}}}}@media print{{header{{position:static}}.menu-toggle,nav{{display:none!important}}main{{max-width:none;padding:0}}.layout{{display:block}}article{{break-inside:auto}}}}
 </style></head><body><main id="top"><header><button class="menu-toggle" type="button" aria-label="タイトル一覧を開く" aria-controls="news-nav" aria-expanded="false"><span class="hamburger" aria-hidden="true"><span></span><span></span><span></span></span></button><h1><a href="#top">{esc(page_title)}</a></h1>{updated_label}</header>
 <div class="layout"><nav id="news-nav" aria-label="タイトル一覧">{contents}</nav><div class="feed">
 {news}
@@ -387,6 +399,8 @@ def main():
     items = []
     if args.from_snapshot:
         snapshot = json.loads(args.from_snapshot.read_text(encoding='utf-8'))
+        if snapshot.get('format_version') != SNAPSHOT_VERSION:
+            raise RuntimeError('本文抽出方法が更新されたため、ニュースを取り直します')
         items = snapshot['items']
         now = datetime.fromisoformat(snapshot['updated'])
         if not items or not any(item.get('body') for item in items):
@@ -411,7 +425,7 @@ def main():
     (output / 'index.html').write_text(render(items, now), encoding='utf-8')
     if not args.from_snapshot and not args.empty:
         (output / 'snapshot.json').write_text(
-            json.dumps({'updated': now.isoformat(), 'items': items}, ensure_ascii=False), encoding='utf-8')
+            json.dumps({'format_version': SNAPSHOT_VERSION, 'updated': now.isoformat(), 'items': items}, ensure_ascii=False), encoding='utf-8')
     # noindexを読めるように、robots.txtによるクロール拒否は行わない。
     (output / 'robots.txt').write_text('User-agent: *\nDisallow:\n', encoding='utf-8')
     (output / '.nojekyll').touch()
