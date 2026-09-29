@@ -69,6 +69,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
+      contents: read
       pages: write
       id-token: write
     environment:
@@ -78,28 +79,11 @@ jobs:
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v5
+      - uses: actions/checkout@v5
+        if: needs.build.outputs.fresh == 'true'
       - name: Notify Discord after news update
         if: needs.build.outputs.fresh == 'true'
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           NEWS_URL: ${{ steps.deployment.outputs.page_url }}
-        run: |
-          python - <<'PY'
-          import json
-          import os
-          import urllib.request
-
-          webhook = os.environ.get('DISCORD_WEBHOOK_URL', '')
-          if not webhook:
-              print('::warning::DISCORD_WEBHOOK_URL が未設定のため通知を省略しました')
-          else:
-              payload = {'content': '📰 ニュースを更新しました\n' + os.environ['NEWS_URL'],
-                         'allowed_mentions': {'parse': []}}
-              request = urllib.request.Request(webhook, data=json.dumps(payload).encode('utf-8'),
-                                               headers={'Content-Type': 'application/json'}, method='POST')
-              try:
-                  with urllib.request.urlopen(request, timeout=20):
-                      pass
-              except Exception:
-                  raise SystemExit('Discordへの通知に失敗しました。Webhookの設定を確認してください。') from None
-          PY
+        run: python scripts/notify_discord.py
