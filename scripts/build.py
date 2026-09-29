@@ -339,9 +339,11 @@ BYLINE_CREDIT = re.compile(
     r'フジテレビ[、,]\s*政治部)$', re.I)
 BYLINE_AGENCY = re.compile(r'^(?:朝日新聞社|読売新聞社|毎日新聞社|日本経済新聞社|産経新聞社|共同通信社|時事通信社|AFP時事|ロイター)$')
 BYLINE_PERSON = re.compile(r'^(?:[一-龥]{3,6}|[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})$')
+BYLINE_SUFFIX = re.compile(r'([。.!！?？」』）])\s*(?:（(?:取材[・･/]文[・･/]?)?[一-龥]{3,6}）|【(?:[ァ-ヶー]{2,16})?[一-龥]{3,6}】)\s*$')
+EXPERT_POINTS = re.compile(r'(?m)^[ \t\u3000]*ココがポイント[ \t\u3000]*(?:\n|$)')
 
 
-def body_paragraphs(text, publisher='', edge=False):
+def body_paragraphs(text, publisher='', edge=False, trailing=False):
     """既存のスナップショットも含め、本文の段落と署名を表示時に整える。"""
     paragraphs, current = [], []
     for raw in text.replace('\r\n', '\n').split('\n'):
@@ -366,6 +368,8 @@ def body_paragraphs(text, publisher='', edge=False):
             current.append(line)
     if current:
         paragraphs.append(' '.join(current))
+    if trailing and paragraphs:
+        paragraphs[-1] = BYLINE_SUFFIX.sub(r'\1', paragraphs[-1])
     return paragraphs
 
 
@@ -378,6 +382,14 @@ def render(items, updated):
         meta = ' / '.join(filter(None, [item['category'], item.get('publisher', ''), format_published(item.get('published', ''))]))
         ordered = item.get('blocks') or ([{'type': 'image', **photo} for photo in item.get('images', [])] +
                                          [{'type': 'text', 'text': p} for p in item['body']])
+        url = item.get('url') or item['topic_url']
+        if '/expert/articles/' in urllib.parse.urlsplit(url).path:
+            # エキスパート記事末尾の「ココがポイント」は出典付きの別記事抜粋。
+            for i, block in enumerate(ordered):
+                if block['type'] == 'text' and (match := EXPERT_POINTS.search(block['text'])):
+                    ordered = ordered[:i] + ([{'type': 'text', 'text': block['text'][:match.start()]}]
+                                             if block['text'][:match.start()].strip() else [])
+                    break
         text_positions = [i for i, block in enumerate(ordered) if block['type'] == 'text']
         content = []
         for position, block in enumerate(ordered):
@@ -386,12 +398,12 @@ def render(items, updated):
                 content.append(f'<figure><img src="{esc(block["src"], quote=True)}" alt="記事に掲載された写真" loading="lazy" decoding="async">{caption}</figure>')
             else:
                 edge = position in text_positions[:2] or position in text_positions[-3:]
-                paragraphs = body_paragraphs(block['text'], item.get('publisher', ''), edge)
+                paragraphs = body_paragraphs(block['text'], item.get('publisher', ''), edge,
+                                             position == text_positions[-1])
                 content.extend(f'<p>{esc(paragraph)}</p>' for paragraph in paragraphs)
         note = f'<p class="notice">{esc(item["note"])}</p>' if item.get('note') else ''
         full_title = item.get('article_title', '')
         subtitle = f'<p class="full-title">{esc(full_title)}</p>' if full_title and full_title != title else ''
-        url = item.get('url') or item['topic_url']
         sections.append(f'<article id="news-{n}"><h2>{esc(title)}</h2><p class="meta"><a href="{esc(url, quote=True)}" target="_blank" rel="noopener noreferrer nofollow">{esc(meta)}</a></p>{subtitle}{"".join(content)}{note}</article>')
     updated_label = f'<time class="updated" datetime="{updated.isoformat()}">更新：{updated.astimezone(JST).strftime("%Y/%m/%d %H:%M")}</time>' if items else ''
     page_title = f'最新ニュース{len(items)}' if items else '最新ニュース'

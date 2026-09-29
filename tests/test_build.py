@@ -151,6 +151,39 @@ class ReaderTests(unittest.TestCase):
         self.assertEqual(build.body_paragraphs('【速報】新たな情報\n朝日新聞社は発表した。'),
                          ['【速報】新たな情報 朝日新聞社は発表した。'])
 
+    def test_byline_at_end_of_final_paragraph(self):
+        signatures = ['（奥原慎平）', '（西健太郎）', '【ワシントン平野光芳】',
+                      '【萩原桂菜】', '【山田豊】', '（長妻昭明）', '（染田屋竜太）']
+        for signature in signatures:
+            with self.subTest(signature=signature):
+                item = {'title': '記事', 'category': '国内', 'topic_url': build.SOURCE,
+                        'body': ['前の段落。', '最後の本文です。' + signature]}
+                page = build.render([item], datetime.now(timezone.utc))
+                self.assertIn('<p>最後の本文です。</p>', page)
+                self.assertNotIn(signature, page)
+        self.assertEqual(build.body_paragraphs('本文です。（山田豊）\n', trailing=True), ['本文です。'])
+        self.assertEqual(build.body_paragraphs('本文です。（山田豊）'), ['本文です。（山田豊）'])
+
+    def test_expert_points_and_cited_excerpts_are_removed(self):
+        excerpts = ['独ロ外相がＮＹで会談、黒海穀物輸出など協議 出典：',
+                    '鉄は国家なり：戦争が試す鉄鋼業の底力',
+                    '「NISA貧乏」という記事をもとに意見を求めました。 出典：',
+                    'ベッキー「心から感謝」10年ぶり出演 出典：',
+                    '「タイムズカー」会員情報約660万件漏えい 出典：',
+                    '学業成績の低下や現実の趣味の放棄を招く。 出典：']
+        item = {'title': '記事', 'category': '国際', 'topic_url': build.SOURCE,
+                'url': 'https://news.yahoo.co.jp/expert/articles/abc',
+                'blocks': [{'type': 'text', 'text': '専門家の記事本文。\nココがポイント'},
+                           *({'type': 'text', 'text': excerpt} for excerpt in excerpts)],
+                'body': ['専門家の記事本文。']}
+        page = build.render([item], datetime.now(timezone.utc))
+        self.assertIn('<p>専門家の記事本文。</p>', page)
+        self.assertNotIn('ココがポイント', page)
+        for excerpt in excerpts:
+            self.assertNotIn(excerpt, page)
+        item['url'] = 'https://news.yahoo.co.jp/articles/abc'
+        self.assertIn('ココがポイント', build.render([item], datetime.now(timezone.utc)))
+
     def test_compact_header_and_category_list(self):
         items = [
             {'title': '記事A', 'category': '国内', 'topic_url': build.SOURCE, 'body': ['本文A']},
