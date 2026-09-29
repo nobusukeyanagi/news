@@ -22,7 +22,7 @@ SOURCE = 'https://news.yahoo.co.jp/topics'
 ORIGIN = 'https://news.yahoo.co.jp'
 AGENT = 'PersonalNewsReader/1.0'
 IMAGE_HOSTS = {'newsatcl-pctr.c.yimg.jp'}
-ARTICLE = re.compile(r'^/articles/[a-f0-9]+/?$')
+ARTICLE = re.compile(r'^/(?:expert/)?articles/[a-f0-9]+/?$')
 PICKUP = re.compile(r'^/pickup/\d+/?$')
 JST = ZoneInfo('Asia/Tokyo')
 
@@ -155,6 +155,12 @@ def parse_topics(document):
 
 def linked_article(document, base):
     soup = BeautifulSoup(document, 'html.parser')
+    # /pickup/ がエキスパート記事へ転送される場合、関連ニュースでなく転送先の本文を読む。
+    canonical = soup.select_one('link[rel="canonical"][href]')
+    if canonical:
+        url = article_url(canonical['href'], base)
+        if url and '/expert/articles/' in urllib.parse.urlsplit(url).path:
+            return url
     anchors = soup.select('a[href]')
     # 関連ニュースより「記事全文を読む」を優先する。
     anchors.sort(key=lambda a: 0 if '記事全文を読む' in a.get_text() else 1)
@@ -200,6 +206,8 @@ def parse_article(document, url):
     images = []
     # ページ全体やdescriptionを「本文」として扱わない。
     containers = soup.select('.article_body') or soup.select('[itemprop="articleBody"]')
+    if not containers and '/expert/articles/' in urllib.parse.urlsplit(url).path:
+        containers = soup.select('article section')
     for container in containers:
         for img in container.select('img'):
             candidate = image_url(img.get('src') or img.get('data-src') or '', url)
@@ -214,9 +222,7 @@ def parse_article(document, url):
         # 写真説明・関連記事・広告を除外。
         for unwanted in container.select('[class*="caption"], [class*="Caption"], [class*="related"], [class*="Related"], [class*="advert"]'):
             unwanted.decompose()
-        blocks = container.select('p.yjSlinkDirectlink, p.highLightSearchTarget, h2, h3, h4')
-        if not blocks:
-            blocks = container.select('p, h2, h3, h4')
+        blocks = container.select('p, h2, h3, h4')
         if blocks:
             for block in blocks:
                 text = clean(block.get_text('\n', strip=True))

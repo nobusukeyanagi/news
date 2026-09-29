@@ -40,6 +40,13 @@ class ReaderTests(unittest.TestCase):
         <a href="/articles/bbb">記事全文を読む</a>''', build.SOURCE)
         self.assertTrue(url.endswith('/bbb'))
 
+    def test_expert_pickup_uses_canonical_instead_of_related_story(self):
+        url = build.linked_article('''<link rel="canonical" href="https://news.yahoo.co.jp/expert/articles/abc">
+        <a href="/expert/articles/def">関連記事</a>''', build.SOURCE)
+        self.assertEqual(url, 'https://news.yahoo.co.jp/expert/articles/abc')
+        item = build.parse_article('''<article><section><h2>見出し</h2><p>エキスパート本文</p></section></article>''', url)
+        self.assertEqual(item['body'], ['見出し', 'エキスパート本文'])
+
     def test_partial_failure_preserves_first_page(self):
         class Client:
             def get(self, url):
