@@ -12,7 +12,15 @@ Yahoo!ニュースの https://news.yahoo.co.jp/topics に表示されている�
 
 公開URLの例：`https://ユーザー名.github.io/news-reader/`
 
-初回アップロードの自動実行がPages設定前に失敗しても、設定後に手動実行すれば再実行できます。秘密鍵・外部APIキーは不要です。プライベートリポジトリでPagesを使えるかはGitHubの契約に依存します。リポジトリを非公開にしても、通常のPages公開URLには閲覧認証は付きません。
+初回アップロードの自動実行がPages設定前に失敗しても、設定後に手動実行すれば再実行できます。ニュース取得には外部APIキーは不要です。プライベートリポジトリでPagesを使えるかはGitHubの契約に依存します。リポジトリを非公開にしても、通常のPages公開URLには閲覧認証は付きません。
+
+## Discordへの更新通知
+
+1. 通知したいDiscordチャンネルの設定からWebhookを作成し、URLをコピーします。
+2. GitHubリポジトリの **Settings → Secrets and variables → Actions → New repository secret** で、名前を `DISCORD_WEBHOOK_URL`、値をWebhook URLにして保存します。Webhook URLをコードや公開ページに書かないでください。
+3. 次回のニュース取得とPages公開が成功すると、そのチャンネルに公開ページのリンクを通知します。Secret未設定なら通知を省略します。
+
+定時更新・手動更新、および保存済み記事がなく再取得した更新が対象です。デザイン変更など、保存済み記事からページだけを再生成したときは通知しません。通知はPagesへの公開が完了した後に送ります。
 
 ## 更新
 
