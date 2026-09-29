@@ -96,7 +96,7 @@ class ReaderTests(unittest.TestCase):
     def test_escaping_and_noindex(self):
         page = build.render([{'title': '<script>alert(1)</script>', 'category': '国内',
                               'topic_url': build.SOURCE, 'body': ['<img src=x onerror=alert(1)>']}], datetime.now(timezone.utc))
-        self.assertNotIn('<script>', page)
+        self.assertNotIn('<script>alert(1)</script>', page)
         self.assertNotIn('<img ', page)
         self.assertIn('noindex, nofollow', page)
         self.assertIn('&lt;script&gt;', page)
@@ -116,7 +116,7 @@ class ReaderTests(unittest.TestCase):
             {'title': '記事B', 'category': '国際', 'topic_url': build.SOURCE, 'body': ['本文B']},
         ]
         page = build.render(items, datetime(2026, 9, 29, 1, 23, tzinfo=timezone.utc))
-        self.assertIn('<header><h1>ニュース一覧</h1><time', page)
+        self.assertIn('<h1><a href="#top">最新ニュース2</a></h1><time', page)
         self.assertIn('更新：2026/09/29 10:23', page)
         self.assertIn('<h2>国内</h2><ul>', page)
         self.assertIn('<h2>国際</h2><ul>', page)
@@ -124,6 +124,11 @@ class ReaderTests(unittest.TestCase):
         self.assertNotIn('<h2>タイトル一覧</h2>', page)
         self.assertNotIn('本文取得 2件', page)
         self.assertNotIn('毎日6:00・18:00に更新予定', page)
+        self.assertIn('header{position:sticky;top:0', page)
+        self.assertIn('border-bottom:1px solid #bbb', page)
+        self.assertIn('aria-controls="news-nav" aria-expanded="false"', page)
+        self.assertIn('body.menu-open .layout nav{display:block}', page)
+        self.assertIn('scroll-margin-top:calc(var(--header-height, 42px) + 12px)', page)
 
     def test_article_time_is_jst_and_meta_links_to_source(self):
         item = {'title': '記事', 'category': '国内', 'publisher': 'tenki.jp',

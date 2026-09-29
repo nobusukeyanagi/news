@@ -340,6 +340,7 @@ def render(items, updated):
         url = item.get('url') or item['topic_url']
         sections.append(f'<article id="news-{n}"><h2>{esc(title)}</h2><p class="meta"><a href="{esc(url, quote=True)}" target="_blank" rel="noopener noreferrer nofollow">{esc(meta)}</a></p>{subtitle}{"".join(content)}{note}</article>')
     updated_label = f'<time class="updated" datetime="{updated.isoformat()}">更新：{updated.astimezone(JST).strftime("%Y/%m/%d %H:%M")}</time>' if items else ''
+    page_title = f'最新ニュース{len(items)}' if items else '最新ニュース'
     contents = ''.join(f'<section class="category"><h2>{esc(category)}</h2><ul>{"".join(links)}</ul></section>' for category, links in categories.items())
     news = ''.join(sections) or '<p>まだニュースを取得していません。GitHub Actionsの「Update news」を実行してください。</p>'
     return f'''<!doctype html>
@@ -350,12 +351,28 @@ def render(items, updated):
 <title>ニュース一覧</title>
 <style>
 *{{box-sizing:border-box}}html{{scroll-behavior:auto}}body{{margin:0;background:#fff;color:#202020;font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif;font-size:16px;line-height:1.9;overflow-wrap:anywhere}}figure{{margin:0 0 18px}}figure img{{display:block;width:auto;max-width:300px;height:auto;max-height:300px;object-fit:contain}}figcaption{{font-size:.8125rem;color:#555;line-height:1.55;margin-top:5px}}
-main{{max-width:1440px;margin:0 auto;padding:14px 24px 56px}}header{{display:flex;align-items:baseline;justify-content:space-between;gap:8px 24px;flex-wrap:wrap;margin-bottom:12px}}h1{{font-size:1.6rem;line-height:1.4;margin:0}}h2{{font-size:1.3rem;line-height:1.55;margin:0 0 8px}}a{{color:#174c86;text-underline-offset:3px}}a:focus-visible{{outline:2px solid #174c86;outline-offset:4px}}.meta,.updated{{font-size:.875rem;color:#555}}.meta{{margin:4px 0 14px}}.meta a{{color:inherit}}.layout{{display:grid;grid-template-columns:minmax(230px,320px) minmax(0,1fr);gap:36px;align-items:start}}nav{{position:sticky;top:16px;max-height:calc(100vh - 32px);overflow:auto;border-top:1px solid #ccc;padding-top:12px}}nav h2{{font-size:1rem;line-height:1.4;margin:0 0 4px}}.category{{margin:0 0 18px}}.category ul{{list-style:none;margin:0;padding:0}}.category li{{padding:2px 0}}article{{border-top:1px solid #bbb;padding:28px 0;scroll-margin-top:16px}}article p{{margin:0 0 18px}}.full-title{{font-weight:600}}.notice{{padding:10px 14px;border-left:3px solid #999;background:#f5f5f5}}footer{{border-top:1px solid #ccc;padding-top:20px;font-size:.875rem;color:#555}}@media(max-width:700px){{main{{padding:12px 16px 36px}}.layout{{display:block}}nav{{position:static;max-height:none;overflow:visible}}h2{{font-size:1.2rem}}}}@media print{{nav{{display:none}}main{{max-width:none;padding:0}}.layout{{display:block}}article{{break-inside:auto}}}}
-</style></head><body><main id="top"><header><h1>ニュース一覧</h1>{updated_label}</header>
-<div class="layout"><nav aria-label="タイトル一覧">{contents}</nav><div class="feed">
+main{{max-width:1440px;margin:0 auto;padding:0 24px 56px}}header{{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:6px 16px;flex-wrap:wrap;min-height:42px;padding:3px 0;background:#fff;border-bottom:1px solid #bbb}}h1{{font-size:1.5rem;line-height:1.3;margin:0}}h1 a{{color:inherit;text-decoration:none}}h2{{font-size:1.3rem;line-height:1.55;margin:0 0 8px}}a{{color:#174c86;text-underline-offset:3px}}a:focus-visible{{outline:2px solid #174c86;outline-offset:4px}}.updated{{margin-left:auto}}.meta,.updated{{font-size:.875rem;color:#555}}.meta{{margin:4px 0 14px}}.meta a{{color:inherit}}.menu-toggle{{display:none}}.layout{{display:grid;grid-template-columns:minmax(230px,320px) minmax(0,1fr);gap:36px;align-items:start}}nav{{position:sticky;top:calc(var(--header-height, 42px) + 8px);max-height:calc(100dvh - var(--header-height, 42px) - 16px);overflow:auto;padding-top:12px}}nav h2{{font-size:1rem;line-height:1.4;margin:0 0 4px}}.category{{margin:0 0 18px}}.category ul{{list-style:none;margin:0;padding:0}}.category li{{padding:2px 0}}article{{border-top:1px solid #bbb;padding:28px 0;scroll-margin-top:calc(var(--header-height, 42px) + 12px)}}.feed article:first-child{{border-top:0;padding-top:12px}}article p{{margin:0 0 18px}}.full-title{{font-weight:600}}.notice{{padding:10px 14px;border-left:3px solid #999;background:#f5f5f5}}footer{{border-top:1px solid #ccc;padding-top:20px;font-size:.875rem;color:#555}}@media(max-width:700px){{main{{padding:0 16px 36px}}.layout{{display:block}}.menu-toggle{{display:inline-flex;align-items:center;justify-content:center;flex:none;width:32px;height:34px;border:0;background:transparent;color:inherit;padding:4px}}.hamburger{{display:flex;flex-direction:column;gap:4px}}.hamburger span{{display:block;width:20px;height:2px;background:currentColor}}h1{{font-size:1.25rem}}.updated{{font-size:.75rem}}h2{{font-size:1.2rem}}.layout nav{{display:none;position:fixed;top:var(--header-height, 42px);left:0;right:0;z-index:19;max-height:calc(100dvh - var(--header-height, 42px));overflow:auto;padding:12px 16px;background:#fff;border-bottom:1px solid #bbb;box-shadow:0 5px 10px #0002}}body.menu-open .layout nav{{display:block}}}}@media print{{header{{position:static}}.menu-toggle,nav{{display:none!important}}main{{max-width:none;padding:0}}.layout{{display:block}}article{{break-inside:auto}}}}
+</style></head><body><main id="top"><header><button class="menu-toggle" type="button" aria-label="タイトル一覧を開く" aria-controls="news-nav" aria-expanded="false"><span class="hamburger" aria-hidden="true"><span></span><span></span><span></span></span></button><h1><a href="#top">{esc(page_title)}</a></h1>{updated_label}</header>
+<div class="layout"><nav id="news-nav" aria-label="タイトル一覧">{contents}</nav><div class="feed">
 {news}
 <footer>取得元：<a href="{SOURCE}" target="_blank" rel="noopener noreferrer nofollow">Yahoo!ニュース トピックス一覧</a><br>本文は取得時点の内容です。訂正・更新・続きは元記事をご確認ください。</footer>
-</div></div></main></body></html>'''
+</div></div></main><script>
+const header = document.querySelector('header');
+const menuButton = document.querySelector('.menu-toggle');
+const menu = document.getElementById('news-nav');
+const updateHeaderHeight = () => document.documentElement.style.setProperty('--header-height', `${{header.getBoundingClientRect().height}}px`);
+updateHeaderHeight();
+new ResizeObserver(updateHeaderHeight).observe(header);
+function setMenu(open) {{
+  document.body.classList.toggle('menu-open', open);
+  menuButton.setAttribute('aria-expanded', String(open));
+  menuButton.setAttribute('aria-label', open ? 'タイトル一覧を閉じる' : 'タイトル一覧を開く');
+}}
+menuButton.addEventListener('click', () => setMenu(menuButton.getAttribute('aria-expanded') !== 'true'));
+menu.addEventListener('click', event => {{ if (event.target.closest('a[href^="#"]')) setMenu(false); }});
+document.addEventListener('keydown', event => {{ if (event.key === 'Escape') setMenu(false); }});
+document.querySelector('header h1 a').addEventListener('click', () => setMenu(false));
+</script></body></html>'''
 
 
 def main():
