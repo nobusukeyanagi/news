@@ -74,6 +74,23 @@ class ReaderTests(unittest.TestCase):
         self.assertEqual(items[0]['title'], 'サンプルの見出し')
         self.assertEqual(items[0]['category'], '国内')
 
+    def test_new_articles_compare_article_identity_and_render_both_lists(self):
+        previous = [{'url': 'https://news.yahoo.co.jp/articles/abc', 'topic_url': build.SOURCE}]
+        items = [
+            {'title': '更新された旧記事', 'category': '国内', 'body': ['本文。'],
+             'url': 'https://news.yahoo.co.jp/articles/abc?page=1', 'topic_url': build.SOURCE},
+            {'title': '追加記事', 'category': 'スポーツ', 'body': ['新しい本文。'],
+             'url': 'https://news.yahoo.co.jp/articles/def', 'topic_url': build.SOURCE}]
+        build.mark_new_items(items, previous)
+        self.assertEqual([item['is_new'] for item in items], [False, True])
+        page = build.render(items, datetime.now(timezone.utc))
+        self.assertEqual(page.count('data-new="true"'), 2)
+        self.assertEqual(page.count(' [NEW]'), 1)
+        self.assertIn('NEWのみ表示', page)
+        self.assertIn("onlyNew ? '全て表示' : 'NEWのみ表示'", page)
+        build.mark_new_items(items, items[:])
+        self.assertFalse(any(item['is_new'] for item in items))
+
     def test_body_pagination_and_caption_exclusion(self):
         doc = '''<article><h1>サンプル</h1><div class="article_body">
         <a href="/articles/abc/images/1"><img src="https://newsatcl-pctr.c.yimg.jp/photo.jpg">画像：提供元</a>
@@ -254,7 +271,7 @@ class ReaderTests(unittest.TestCase):
                         'publisher': '朝日新聞社'}
                 page = build.render([item], datetime.now(timezone.utc))
                 self.assertIn('<p>本文は朝日新聞社に関するものです。</p>', page)
-                self.assertEqual(page.count('<article id="news-1">'), 1)
+                self.assertEqual(page.count('<article id="news-1"'), 1)
                 self.assertNotIn(f'<p>{credit}</p>', page)
         self.assertEqual(build.body_paragraphs('【ワシントン平野光芳】記事本文\n[台北 ２８日 ロイター] - 続報'),
                          ['記事本文 続報'])
@@ -378,8 +395,8 @@ class ReaderTests(unittest.TestCase):
             {'title': '記事B', 'category': '国際', 'topic_url': build.SOURCE, 'body': ['本文B']},
         ]
         page = build.render(items, datetime(2026, 9, 29, 1, 23, tzinfo=timezone.utc))
-        self.assertIn('<h1><a href="#top">最新ニュース2</a></h1><time', page)
-        self.assertIn('更新：2026-09-29 10:23', page)
+        self.assertIn('<h1><a href="#top">最新ニュース2</a></h1><div class="update-controls"><time', page)
+        self.assertIn('更新 2026-09-29 10:23', page)
         self.assertIn('<h2>国内</h2><ul>', page)
         self.assertIn('<h2>国際</h2><ul>', page)
         self.assertNotIn('<ol>', page)
@@ -429,7 +446,7 @@ class ReaderTests(unittest.TestCase):
                                                                                  side_effect=AssertionError('network')):
                 build.main()
             page = (site / 'index.html').read_text(encoding='utf-8')
-            self.assertIn('更新：2026-09-29 06:00', page)
+            self.assertIn('更新 2026-09-29 06:00', page)
             self.assertLess(page.index('images/one.jpg'), page.index('本文'))
             self.assertIn('<link rel="icon" href="favicon.ico"', page)
             self.assertIn('<link rel="apple-touch-icon" href="apple-touch-icon.png"', page)
