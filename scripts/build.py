@@ -538,7 +538,7 @@ def render(items, updated):
         subtitle = f'<p class="full-title">{display(full_title)}</p>' if full_title and full_title != title else ''
         new_label = ' [NEW]' if item.get('is_new') else ''
         sections.append(f'<article id="news-{n}" data-new="{str(bool(item.get("is_new"))).lower()}"><h2>{display(title)}</h2><p class="meta"><a href="{esc(url, quote=True)}" target="_blank" rel="noopener noreferrer nofollow">{display(meta)}</a>{new_label}</p>{subtitle}{"".join(content)}{note}</article>')
-    updated_label = f'<div class="update-controls"><time class="updated" datetime="{updated.isoformat()}">更新 {updated.astimezone(JST).strftime("%Y-%m-%d %H:%M")}</time><button class="new-filter" type="button" aria-pressed="false">NEWのみ表示</button></div>' if items else ''
+    updated_label = f'<div class="update-controls"><time class="updated" datetime="{updated.isoformat()}">更新 {updated.astimezone(JST).strftime("%Y-%m-%d %H:%M")}</time><button class="new-filter" type="button" aria-pressed="false">NEWのみ表示に変更</button></div>' if items else ''
     page_title = f'最新ニュース{len(items)}' if items else '最新ニュース'
     contents = ''.join(f'<section class="category"><h2>{display(category)}</h2><ul>{"".join(links)}</ul></section>' for category, links in categories.items())
     news = ''.join(sections) or '<p>まだニュースを取得していません。GitHub Actionsの「Update news」を実行してください。</p>'
@@ -561,7 +561,7 @@ const filterButton = document.querySelector('.new-filter');
 filterButton?.addEventListener('click', () => {{
   const onlyNew = filterButton.getAttribute('aria-pressed') !== 'true';
   filterButton.setAttribute('aria-pressed', String(onlyNew));
-  filterButton.textContent = onlyNew ? '全て表示' : 'NEWのみ表示';
+  filterButton.textContent = onlyNew ? '全て表示に変更' : 'NEWのみ表示に変更';
   document.querySelectorAll('[data-new]').forEach(node => node.hidden = onlyNew && node.dataset.new !== 'true');
   document.querySelectorAll('nav .category').forEach(node => node.hidden = !node.querySelector('li:not([hidden])'));
 }});
