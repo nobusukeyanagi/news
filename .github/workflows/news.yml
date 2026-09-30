@@ -26,8 +26,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      - name: Restore previously fetched news for a push
-        if: github.event_name == 'push'
+      - name: Restore previously fetched news
         uses: actions/cache/restore@v5
         continue-on-error: true
         with:
@@ -45,8 +44,11 @@ jobs:
              python scripts/build.py --from-snapshot site/snapshot.json --output site; then
             echo '保存済みデータからページを再生成しました'
           else
+            if [[ -f site/snapshot.json ]]; then
+              cp site/snapshot.json "$RUNNER_TEMP/previous-news.json"
+            fi
             rm -rf site
-            python scripts/build.py --output site
+            python scripts/build.py --output site --previous-snapshot "$RUNNER_TEMP/previous-news.json"
             echo 'fresh=true' >> "$GITHUB_OUTPUT"
           fi
       - name: Save snapshot after fetching news
