@@ -86,8 +86,8 @@ class ReaderTests(unittest.TestCase):
         page = build.render(items, datetime.now(timezone.utc))
         self.assertEqual(page.count('data-new="true"'), 2)
         self.assertEqual(page.count(' [NEW]'), 1)
-        self.assertIn('NEWのみ表示に変更', page)
-        self.assertIn("onlyNew ? '全て表示に変更' : 'NEWのみ表示に変更'", page)
+        self.assertIn('すべて表示中', page)
+        self.assertIn("onlyNew ? 'NEWのみ表示中' : 'すべて表示中'", page)
         build.mark_new_items(items, items[:])
         self.assertFalse(any(item['is_new'] for item in items))
 
