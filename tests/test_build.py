@@ -419,6 +419,28 @@ class ReaderTests(unittest.TestCase):
         self.assertIn('.feed article h2{color:#14532d}', page)
         self.assertNotIn('nav h2{color:#14532d}', page)
 
+    def test_department_magazine_and_multiple_reporter_credits(self):
+        credits = [
+            'フジテレビ,社会部', 'フジテレビ,外信部', 'フジテレビ、経済部',
+            '「週刊文春」編集部／週刊文春 2026年10月8日号',
+            '「週刊文春」編集部/週刊文春 ２０２６年１０月８日号',
+            '【源馬のぞみ、樋口淳也】', '【源馬のぞみ、樋口淳也、山田豊】',
+        ]
+        for credit in credits:
+            with self.subTest(credit=credit):
+                self.assertEqual(build.body_paragraphs('本文です。\n' + credit, edge=True),
+                                 ['本文です。'])
+        self.assertEqual(build.body_paragraphs('本文です。【源馬のぞみ、樋口淳也】', edge=True),
+                         ['本文です。'])
+
+    def test_credit_cleanup_preserves_article_sentences(self):
+        for text in ['【速報】新しい発表がありました。',
+                     'フジテレビ,社会部が取材しました。',
+                     '「週刊文春」編集部が回答した。',
+                     '源馬のぞみ、樋口淳也の両記者が登壇した。']:
+            with self.subTest(text=text):
+                self.assertEqual(build.body_paragraphs(text, edge=True), [text])
+
     def test_article_time_is_jst_and_meta_links_to_source(self):
         item = {'title': '記事', 'category': '国内', 'publisher': 'tenki.jp',
                 'topic_url': 'https://news.yahoo.co.jp/pickup/1',

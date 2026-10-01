@@ -401,6 +401,13 @@ def format_published(value):
         return re.sub(r'(\d{4})/(\d{2})/(\d{2})', r'\1-\2-\3', str(value))
 
 
+# 複数記者の署名は、かなを含む名前にも対応する。単独の【速報】等は対象外。
+MULTI_REPORTER = r'[一-龥][一-龥ぁ-んァ-ヶー]{2,11}(?:[、,，・][ \t]*[一-龥][一-龥ぁ-んァ-ヶー]{2,11})+'
+MULTI_BYLINE = re.compile(r'^【' + MULTI_REPORTER + r'】$')
+MULTI_BYLINE_SUFFIX = re.compile(r'([。.!！?？」』）])\s*【' + MULTI_REPORTER + r'】\s*$')
+MAGAZINE_CREDIT = re.compile(
+    r'^[「『]週刊文春[」』]編集部\s*[/／]\s*週刊文春\s*'
+    r'[0-9０-９]{4}年[0-9０-９]{1,2}月[0-9０-９]{1,2}日号$')
 BYLINE_BRACKET = re.compile(r'^【(?:[ァ-ヶー]{2,16}(?:AFP時事|共同|時事|ロイター|[一-龥]{3,6})|[一-龥]{3,6})】\s*')
 WIRE_DATELINE = re.compile(r'^\[[^\]\n]{1,35}(?:ロイター|Reuters|AFP)[^\]\n]*\]\s*[-－―]\s*', re.I)
 BYLINE_CREDIT = re.compile(
@@ -408,7 +415,7 @@ BYLINE_CREDIT = re.compile(
     r'^（(?:取材[・･/]文[・･/]?)?[一-龥ぁ-んァ-ヶー]{3,16}）$|'
     r'^（\d{1,2}月\d{1,2}日放送\s+.+より）$|'
     r'^(?:日本気象協会(?:\s+本社)?\s+[一-龥]{1,5}[\s\u3000]*[一-龥]{1,5}|'
-    r'フジテレビ[、,]\s*政治部)$', re.I)
+    r'フジテレビ[、,，]\s*(?:政治|社会|外信|経済|報道|スポーツ)部)$', re.I)
 BYLINE_AGENCY = re.compile(r'^(?:朝日新聞社|読売新聞社|毎日新聞社|日本経済新聞社|産経新聞社|共同通信社|時事通信社|AFP時事|ロイター|Full-Count編集部|All Nippon NewsNetwork\(ANN\)|TBSテレビ|テレビ朝日|富山テレビ放送)$')
 BYLINE_PERSON = re.compile(r'^(?:[一-龥]{3,6}|[A-Z][a-z]+(?:-[a-z]+)?(?:\s+[A-Z][a-z]+(?:-[a-z]+)?){1,3})$')
 BYLINE_SUFFIX = re.compile(r'([。.!！?？」』）])\s*(?:（(?:取材[・･/]文[・･/]?)?[一-龥]{3,6}）|【(?:[ァ-ヶー]{2,16})?[一-龥]{3,6}】)\s*$')
@@ -440,6 +447,7 @@ def body_paragraphs(text, publisher='', edge=False):
         # 元サイトでは配信元が通常の段落や同じ段落の改行に入ることもある。
         line = strip_heading_credit(line, publisher)
         if (BYLINE_CREDIT.fullmatch(line) or BYLINE_AGENCY.fullmatch(line) or
+                MULTI_BYLINE.fullmatch(line) or MAGAZINE_CREDIT.fullmatch(line) or
                 (line and line == publisher) or
                 (edge and line and BYLINE_PERSON.fullmatch(line.replace('　', ' ')))):
             if current:
@@ -457,10 +465,10 @@ def body_paragraphs(text, publisher='', edge=False):
             current.append(line)
     if current:
         paragraphs.append(' '.join(current))
-    paragraphs = [strip_heading_credit(BYLINE_SUFFIX.sub(r'\1', paragraph), publisher)
+    paragraphs = [strip_heading_credit(BYLINE_SUFFIX.sub(r'\1', MULTI_BYLINE_SUFFIX.sub(r'\1', paragraph)), publisher)
                   for paragraph in paragraphs]
     if edge:
-        paragraphs = [ENGLISH_BYLINE_SUFFIX.sub(r'\1', paragraph) for paragraph in paragraphs]
+        paragraphs = [ENGLISH_BYLINE_SUFFIX.sub(r'\1', MULTI_BYLINE_SUFFIX.sub(r'\1', paragraph)) for paragraph in paragraphs]
     return paragraphs
 
 
