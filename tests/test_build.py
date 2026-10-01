@@ -410,7 +410,7 @@ class ReaderTests(unittest.TestCase):
         self.assertIn('@media(max-width:700px){body{line-height:1.8}', page)
         self.assertIn('.updated{margin-left:0}', page)
         self.assertIn('h2{font-size:20px;', page)
-        self.assertIn('nav h2{font-size:17px;', page)
+        self.assertIn('nav h2{font-size:14px;', page)
         self.assertIn('class="pull-refresh" role="status"', page)
         self.assertIn("window.location.reload();", page)
         self.assertIn("window.scrollY <= 0 && !document.body.classList.contains('menu-open')", page)
