@@ -230,7 +230,7 @@ class ReaderTests(unittest.TestCase):
                             datetime.now(timezone.utc))
         self.assertIn('grid-template-columns:minmax(230px,320px) minmax(0,1fr)', page)
         self.assertIn('<figcaption>&lt;出典&gt;</figcaption>', page)
-        self.assertIn('font-size:.8125rem', page)
+        self.assertIn('figcaption{font-size:14px', page)
         self.assertIn('max-width:300px;height:auto;max-height:300px', page)
 
     def test_body_indentation_and_blank_lines_become_paragraph_spacing(self):
@@ -407,9 +407,10 @@ class ReaderTests(unittest.TestCase):
         self.assertIn('border-bottom:1px solid #bbb', page)
         self.assertIn('aria-controls="news-nav" aria-expanded="false"', page)
         self.assertIn('order:3;margin-left:auto;width:32px', page)
-        self.assertIn('@media(max-width:700px){body{font-size:17px;line-height:1.8}', page)
-        self.assertIn('.updated{margin-left:0;font-size:14px}figcaption{font-size:14px}', page)
-        self.assertIn('h2{font-size:20px}.layout nav h2{font-size:17px}', page)
+        self.assertIn('@media(max-width:700px){body{line-height:1.8}', page)
+        self.assertIn('.updated{margin-left:0}', page)
+        self.assertIn('h2{font-size:20px;', page)
+        self.assertIn('nav h2{font-size:17px;', page)
         self.assertIn('class="pull-refresh" role="status"', page)
         self.assertIn("window.location.reload();", page)
         self.assertIn("window.scrollY <= 0 && !document.body.classList.contains('menu-open')", page)
