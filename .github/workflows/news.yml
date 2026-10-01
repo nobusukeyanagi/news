@@ -2,8 +2,8 @@ name: Update news
 
 on:
   schedule:
-    # UTC 15:00 / 23:00 / 07:00 = 日本時間 00:00 / 08:00 / 16:00
-    - cron: '0 7,15,23 * * *'
+    # UTC 15:04 / 23:04 / 07:04 = 日本時間 00:04 / 08:04 / 16:04
+    - cron: '4 7,15,23 * * *'
   workflow_dispatch:
   push:
     branches: [main]
