@@ -58,6 +58,14 @@ jobs:
         with:
           path: site
           key: news-snapshot-${{ github.run_id }}
+      - name: Pass NEW news to notification job
+        if: steps.build.outputs.fresh == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: news-notification-snapshot
+          path: site/snapshot.json
+          if-no-files-found: error
+          retention-days: 1
       - name: Package page
         run: tar --dereference --hard-dereference --exclude='./snapshot.json' -C site -cf "$RUNNER_TEMP/artifact.tar" .
       - name: Upload Pages artifact
@@ -83,9 +91,16 @@ jobs:
         uses: actions/deploy-pages@v5
       - uses: actions/checkout@v5
         if: needs.build.outputs.fresh == 'true'
+      - name: Download NEW news data
+        if: needs.build.outputs.fresh == 'true'
+        uses: actions/download-artifact@v8
+        with:
+          name: news-notification-snapshot
+          path: notification-data
       - name: Notify Discord after news update
         if: needs.build.outputs.fresh == 'true'
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           NEWS_URL: ${{ steps.deployment.outputs.page_url }}
+          NEWS_SNAPSHOT_PATH: notification-data/snapshot.json
         run: python scripts/notify_discord.py
