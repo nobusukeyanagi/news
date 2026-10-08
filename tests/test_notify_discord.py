@@ -1,6 +1,7 @@
 import importlib.util
 import io
 import json
+import tempfile
 import unittest
 import urllib.error
 from pathlib import Path
@@ -37,6 +38,33 @@ class DiscordNotificationTests(unittest.TestCase):
     def test_non_discord_url_is_rejected(self):
         with self.assertRaises(ValueError):
             notify.webhook_url('https://other.example/api/webhooks/123/token')
+
+    def test_snapshot_includes_only_new_titles_in_page_order(self):
+        with tempfile.TemporaryDirectory() as directory:
+            snapshot = Path(directory) / 'snapshot.json'
+            snapshot.write_text(json.dumps({'items': [
+                {'title': '最初のニュース', 'is_new': True},
+                {'title': '前回からあるニュース', 'is_new': False},
+                {'title': '次のニュース', 'is_new': True},
+            ]}), encoding='utf-8')
+            titles = notify.new_titles(snapshot)
+        self.assertEqual(titles, ['最初のニュース', '次のニュース'])
+        with patch.object(notify.urllib.request, 'urlopen') as urlopen:
+            notify.send('https://discord.com/api/webhooks/123/secret',
+                        'https://example.github.io/news/', titles)
+        self.assertEqual(json.loads(urlopen.call_args.args[0].data)['content'],
+                         '📰 ニュースを更新しました\nhttps://example.github.io/news/\n'
+                         '最初のニュース\n次のニュース')
+
+    def test_many_new_titles_are_sent_without_omissions(self):
+        titles = [f'{number:02d} ' + '長いニュース' * 8 for number in range(64)]
+        with patch.object(notify.urllib.request, 'urlopen') as urlopen:
+            notify.send('https://discord.com/api/webhooks/123/secret',
+                        'https://example.github.io/news/', titles)
+        contents = [json.loads(call.args[0].data)['content'] for call in urlopen.call_args_list]
+        self.assertGreater(len(contents), 1)
+        self.assertTrue(all(len(content) <= 2000 for content in contents))
+        self.assertEqual('\n'.join(contents).splitlines()[2:], titles)
 
 
 if __name__ == '__main__':
